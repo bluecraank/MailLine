@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MailLine</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <nav id="rail"></nav>
+    <aside id="sidebar-wrap"><div id="sidebar"></div><div class="resizer" data-resize="side" title="Ziehen zum Ändern · Doppelklick = Standard"></div></aside>
+    <section id="list">
+      <header class="list-head">
+        <div class="list-title">
+          <h1 id="folder-title">Posteingang</h1>
+          <span id="folder-meta" class="muted"></span>
+        </div>
+        <button class="icon-btn" id="refresh" title="Aktualisieren (F5)">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+        </button>
+      </header>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" placeholder="Suchen  (Strg+K)" autocomplete="off" />
+      </div>
+      <div id="messages" tabindex="0"></div>
+      <div class="resizer" data-resize="list" title="Ziehen zum Ändern · Doppelklick = Standard"></div>
+    </section>
+    <main id="reader"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
