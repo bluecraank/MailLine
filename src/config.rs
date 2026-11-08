@@ -19,6 +19,14 @@ pub struct Account {
     pub smtp_port: u16,
     pub signatures: Vec<Signature>,
     pub default_signature: usize,
+    /// Nach dem Senden eine Kopie per IMAP im Gesendet-Ordner ablegen
+    #[serde(default)]
+    pub save_sent: bool,
+    /// Leer = automatisch erkennen
+    #[serde(default)]
+    pub sent_folder: String,
+    #[serde(default)]
+    pub drafts_folder: String,
 }
 
 impl Account {

@@ -1,105 +1,122 @@
+<p align="center">
+  <img src="icons/icon.png" width="96" alt="MailLine icon" />
+</p>
+
 # MailLine
 
-**Yet another Mail-Client.** Ja, wirklich. Noch einer.
+**Yet another mail client.** Yes, really. Another one.
 
-Aber dieser hier ist modern, schnell, in Rust geschrieben und komplett *vibe coded*: Anforderungen in eine Markdown-Datei geschrieben, „umsetzen“ gesagt, Kaffee geholt. ☕
+But this one is modern, fast, written in Rust and fully *vibe coded*: the requirements went into a Markdown file, someone said "build it", then went to grab a coffee. ☕
 
-Kein Electron, keine Cloud, kein Konto bei irgendwem. Nur du, dein IMAP-Server und eine Oberfläche, die nicht aussieht wie 2003.
+No Electron, no cloud, no account with anybody. Just you, your IMAP server and a UI that doesn't look like 2003.
 
 ---
 
-## Was kann das Ding?
+## Features
 
-- **Mehrere Konten**: alle IMAP-Postfächer in einem Fenster, Wechsel per Klick oder `Strg+1…9`
-- **Fokus-Modus**: Markiere die Postfächer, die gerade zählen (auch über mehrere Konten hinweg), und blende den Rest aus. Kein Newsletter-Rauschen mehr.
-- **Mehrere Signaturen pro Konto**: z. B. Deutsch und Englisch, beim Schreiben per Klick umschalten
-- **Kontakte mit Schnell-Weiterleiten**: Rechnung kommt rein → „Weiterleiten an“ → Buchhaltung → fertig. Die Mail geht samt allen Anhängen raus, ohne Adresse tippen.
-- **Anhänge**: ansehen, mit einem Klick öffnen, in „Downloads“ speichern, eigene Dateien anhängen
-- **CC & BCC**, mit Autovervollständigung aus Kontakten und bekannten Absendern
-- **Rechtsklick-Menüs**: auf Mails, Ordnern, Konten und Anhängen. Mails lassen sich so beantworten, weiterleiten, als gelesen oder ungelesen markieren, verschieben und löschen.
-- **Löschen mit `Entf`**: Die Mail wandert in den Papierkorb. `Umschalt+Entf` löscht sie endgültig.
-- **HTML-Mails** werden richtig dargestellt. Externe Bilder sind standardmäßig blockiert (Tracking-Pixel, nein danke).
-- **Hell & dunkel**: folgt automatisch der Windows-Einstellung
-- **Verschiebbare Spalten**: Breite per Drag anpassen, Doppelklick setzt sie zurück
-- **Server-Voreinstellungen** für Gmail, Outlook, GMX, web.de, T-Online, iCloud, Posteo, mailbox.org und Yahoo
-- **Passwörter** liegen in der Windows-Anmeldeinformationsverwaltung, nicht im Klartext auf der Platte
+- **Multiple accounts**: all your IMAP mailboxes in one window. Switch with a click or `Ctrl+1…9`.
+- **Focus mode**: star the folders that matter right now, across accounts, and hide everything else. No more newsletter noise.
+- **Multiple signatures per account**: e.g. German and English, switchable with one click while writing.
+- **Contacts with quick forward**: an invoice comes in → "Forward to" → Accounting → done. The mail goes out with all its attachments, no typing.
+- **Offline mode**: the newest 1,000 mails of every folder are synced in the background, including their content. No connection? MailLine keeps working from the local cache.
+- **Full-text search**: searches subject, sender, body and attachment names across all accounts and folders, with highlighted snippets. Umlauts and accents are ignored, so `uber` finds `über`.
+- **Drafts**: saved on the server, so they show up on your phone too. Saved with `Ctrl+S` or automatically when you close the editor. Double-click a draft to keep editing it.
+- **Sent folder copy**: optional per account. Turn it off for Gmail and Microsoft 365, they do it themselves.
+- **Attachments**: preview, open with one click, save to Downloads, attach your own files.
+- **CC & BCC**, with autocomplete from contacts and known senders.
+- **Context menus**: right-click mails, folders, accounts or attachments to reply, forward, mark as read or unread, move or delete.
+- **Delete with `Del`**: the mail goes to the trash. `Shift+Del` deletes it permanently.
+- **HTML mails** render properly. Remote images are blocked by default (tracking pixels, no thanks).
+- **Light & dark**: follows your Windows theme.
+- **Resizable columns**: drag to adjust, double-click to reset.
+- **Server presets** for Gmail, Outlook, GMX, web.de, T-Online, iCloud, Posteo, mailbox.org and Yahoo.
+- **Passwords** are stored in the Windows Credential Manager, not in plain text on disk.
 
-## Tastenkürzel
+> The UI is currently in German.
 
-| Kürzel | Aktion |
+## Keyboard shortcuts
+
+| Shortcut | Action |
 |---|---|
-| `Strg+1` … `Strg+9` | Konto wechseln |
-| `Strg+N` | Neue Nachricht |
-| `Strg+K` | Suchen |
-| `Strg+Umschalt+F` | Fokus-Modus an/aus |
-| `Strg+Umschalt+K` | Kontakte |
-| `↑` / `↓` (oder `j` / `k`) | Durch Mails blättern |
-| `R` | Antworten |
-| `W` | Weiterleiten-Menü |
-| `U` | Gelesen / ungelesen umschalten |
-| `Entf` | In den Papierkorb |
-| `Umschalt+Entf` | Endgültig löschen |
-| `Strg+Enter` | Senden |
-| `F5` | Aktualisieren |
+| `Ctrl+1` … `Ctrl+9` | Switch account |
+| `Ctrl+N` | New message |
+| `Ctrl+K` | Search (all accounts & folders) |
+| `Ctrl+Shift+F` | Toggle focus mode |
+| `Ctrl+Shift+K` | Contacts |
+| `↑` / `↓` (or `j` / `k`) | Browse mails |
+| `R` | Reply |
+| `W` | Forward menu |
+| `U` | Toggle read / unread |
+| `Del` | Move to trash |
+| `Shift+Del` | Delete permanently |
+| `Enter` | Edit draft (in the Drafts folder) |
+| `Ctrl+Enter` | Send |
+| `Ctrl+S` | Save draft |
+| `F5` | Refresh |
 
-## Tech-Stack
+## Tech stack
 
-| Teil | Womit |
+| Part | Built with |
 |---|---|
-| Backend | **Rust**: [`imap`](https://crates.io/crates/imap), [`lettre`](https://crates.io/crates/lettre) (SMTP), [`mail-parser`](https://crates.io/crates/mail-parser), [`keyring`](https://crates.io/crates/keyring) |
-| App-Hülle | [Tauri 2](https://tauri.app) (nutzt das in Windows eingebaute WebView2) |
-| Oberfläche | Plain HTML, CSS und JavaScript, ohne Framework und ohne Build-Schritt |
+| Backend | **Rust**: [`imap`](https://crates.io/crates/imap), [`lettre`](https://crates.io/crates/lettre) (SMTP), [`mail-parser`](https://crates.io/crates/mail-parser), [`keyring`](https://crates.io/crates/keyring), [`rusqlite`](https://crates.io/crates/rusqlite) (SQLite + FTS5) |
+| App shell | [Tauri 2](https://tauri.app) (uses the WebView2 that ships with Windows) |
+| UI | Plain HTML, CSS and JavaScript, with no framework and no build step |
 
-Die Release-`.exe` ist rund 9 MB groß.
+The release `.exe` is about 11 MB.
 
 ## Download
 
-Die fertige `mailline.exe` gibt es unter [Releases](../../releases). Die Datei ist nicht signiert, deshalb kann Windows SmartScreen beim ersten Start warnen („Weitere Informationen“ → „Trotzdem ausführen“).
+Get the latest `mailline.exe` from [Releases](../../releases). No installation needed.
 
-## Bauen & starten
+The binary isn't code-signed, so Windows SmartScreen may complain on first launch ("More info" → "Run anyway").
 
-Voraussetzungen: [Rust](https://rustup.rs) (stable) und Windows 10/11 (WebView2 ist dort schon installiert). Node.js wird **nicht** gebraucht.
+## Build & run
+
+Requirements: [Rust](https://rustup.rs) (stable) and Windows 10/11 (WebView2 is already installed there). Node.js is **not** needed.
 
 ```sh
 cargo run --release
 ```
 
-> Für den Alltag immer `--release` verwenden. Der Debug-Build ist spürbar träger.
+> Use `--release` for everyday use. The debug build is noticeably slower.
 
-Die fertige Datei liegt danach unter `target/release/mailline.exe`.
+The binary ends up in `target/release/mailline.exe`.
 
-## Wo liegt was?
+## Where is my data?
 
-| Was | Wo |
+| What | Where |
 |---|---|
-| Konten, Signaturen, Kontakte, Fokus-Postfächer | `%APPDATA%\MailLine\config.json` |
-| Passwörter | Windows-Anmeldeinformationsverwaltung (`MailLine`) |
-| Geöffnete Anhänge (temporär) | `%TEMP%\MailLine\` |
+| Accounts, signatures, contacts, focus folders | `%APPDATA%\MailLine\config.json` |
+| Passwords | Windows Credential Manager (`MailLine`) |
+| Offline cache & search index | `%LOCALAPPDATA%\MailLine\cache.db` |
+| Opened attachments (temporary) | `%TEMP%\MailLine\` |
+
+Deleting `cache.db` is safe: MailLine rebuilds it on the next sync.
 
 ```
 src/
-  main.rs      Tauri-Befehle (Brücke zwischen Oberfläche und Rust)
-  backend.rs   IMAP, SMTP, MIME-Parsing, Anhänge
-  config.rs    Konfiguration & Passwörter
+  main.rs      Tauri commands (the bridge between UI and Rust)
+  backend.rs   IMAP, SMTP, MIME parsing, sync, drafts
+  cache.rs     Offline cache & full-text index (SQLite/FTS5)
+  config.rs    Settings & passwords
 ui/
-  index.html   Grundgerüst
-  style.css    Design (Hell/Dunkel)
-  app.js       Die komplette Oberfläche
+  index.html   Skeleton
+  style.css    Design (light/dark)
+  app.js       The entire UI
 ```
 
-## Ehrliche Einschränkungen
+## Honest limitations
 
-Es ist vibe coded, also:
+It's vibe coded, so:
 
-- Pro Ordner werden die **neuesten 100 Mails** geladen
-- **Kein Offline-Modus**, keine lokale Volltextsuche (gesucht wird in den geladenen Mails)
-- Gesendete Mails landen **nicht automatisch im „Gesendet“-Ordner** (viele Anbieter wie Gmail machen das selbst)
-- Keine Entwürfe, kein „Allen antworten“, keine Mehrfachauswahl
-- Primär für **Windows** gebaut und getestet
-- Kein OAuth: Für Gmail/Outlook braucht es ein **App-Passwort**
+- Offline sync covers the **newest 1,000 mails per folder**. Spam and trash are skipped, and mails over 25 MB stay online-only.
+- **Sending requires a connection**. There's no outbox queue yet.
+- No "Reply all", no multi-select, no rich-text editor (plain text only).
+- Built and tested primarily on **Windows**.
+- No OAuth: Gmail and Outlook need an **app password**.
 
-Pull Requests willkommen. Oder einfach selbst weiter-viben. 🤙
+Pull requests welcome. Or just keep vibing on it yourself. 🤙
 
-## Lizenz
+## License
 
-Noch keine festgelegt.
+None chosen yet.

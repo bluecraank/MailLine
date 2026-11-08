@@ -331,3 +331,24 @@ body.resizing iframe { pointer-events: none; }
 .ctx-menu.sub { position: absolute; left: calc(100% - 4px); top: -6px; display: none; max-height: 60vh; overflow-y: auto; animation: none; }
 .ctx-menu.flip .ctx-menu.sub { left: auto; right: calc(100% - 4px); }
 .has-sub:hover > .ctx-menu.sub { display: block; }
+
+/* ---------- Volltextsuche ---------- */
+.msg.hit .av { grid-row: 1 / span 2; }
+.msg .snip { grid-column: 2 / span 2; font-size: 12.5px; color: var(--muted); line-height: 1.4; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.msg .snip mark { background: rgba(245, 165, 36, .3); color: var(--text); border-radius: 3px; padding: 0 1px; }
+.msg .where { grid-column: 2 / span 2; font-size: 11.5px; color: var(--muted); margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+.msg .where .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+/* ---------- Entwürfe ---------- */
+.draft-bar { display: flex; align-items: center; gap: 10px; margin: 0 20px 12px; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--accent-soft); color: var(--text-2); }
+.draft-bar span { flex: 1; font-weight: 550; }
+.draft-bar svg { color: var(--accent); }
+
+/* ---------- Offline / Sync ---------- */
+.sync-status { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 8px 8px 0; margin-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.sync-status:empty { display: none; }
+.sync-status svg { width: 14px; height: 14px; color: var(--ok); }
+.sync-status span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spinner { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+.pill-off { display: inline-block; padding: 1px 7px; border-radius: 6px; background: rgba(245, 165, 36, .18); color: #b7791f; font-size: 11px; font-weight: 650; }
+@media (prefers-color-scheme: dark) { .pill-off { color: #f5b544; } }

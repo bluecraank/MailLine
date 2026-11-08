@@ -17,6 +17,10 @@ const S = {
   loading: new Set(),   // Schlüssel, die gerade laden
   showImages: false,
   fmeta: {},            // "id|folder" -> { label, depth }
+  results: null,        // Volltext-Treffer (null = keine Suche aktiv)
+  offline: false,
+  sync: { running: false },
+  closeGuard: null,     // wird vor dem Schließen eines Dialogs gefragt (Entwurf sichern)
 };
 
 const key = (id, folder) => `${id}|${folder}`;
@@ -104,7 +108,9 @@ async function saveCfg() {
 
 async function loadFolders(id) {
   try {
-    const list = await invoke("folders", { accountId: id });
+    const r = await invoke("folders", { accountId: id });
+    const list = r.folders;
+    if (r.offline) setOffline(true);
     for (const f of list) S.fmeta[key(id, f.name)] = { label: f.label, depth: f.depth };
     // Systemordner nach oben, Unterordner direkt unter ihrem Elternordner
     const top = (n) => { const m = list.find((f) => f.depth === 0 && (n === f.name || (n.startsWith(f.name) && /[/.]/.test(n[f.name.length])))); return m ? m.name : n; };
@@ -127,9 +133,11 @@ async function loadHeads(id, folder) {
   renderListHead();
   if (!S.heads[k]) renderList();
   try {
-    S.heads[k] = await invoke("headers", { accountId: id, folder });
+    const r = await invoke("headers", { accountId: id, folder });
+    S.heads[k] = r.msgs;
+    setOffline(r.offline);
   } catch (e) {
-    toast(String(e), "err");
+    if (curKey() === k) toast(String(e), "err");
     S.heads[k] = S.heads[k] || [];
   }
   S.loading.delete(k);
@@ -138,11 +146,19 @@ async function loadHeads(id, folder) {
   renderRail();
 }
 
+function setOffline(v) {
+  if (S.offline === v) return;
+  S.offline = v;
+  renderSync();
+  renderListHead();
+}
+
 function openFolder(id, folder) {
   S.accId = id;
   S.cur = { id, folder };
   S.selUid = null;
   S.search = "";
+  S.results = null;
   $("#search").value = "";
   renderAll();
   loadHeads(id, folder); // Cache wird sofort angezeigt, dann im Hintergrund aktualisiert
@@ -164,15 +180,20 @@ async function openMessage(uid) {
   S.showImages = false;
   const { id, folder } = S.cur;
   const h = (S.heads[key(id, folder)] || []).find((m) => m.uid === uid);
-  if (h && h.unread) { h.unread = false; renderRail(); renderSidebar(); }
+  if (h && h.unread) {
+    h.unread = false; renderRail(); renderSidebar();
+    invoke("set_seen", { accountId: id, folder, uids: [uid], seen: true }).catch(() => {});
+  }
   renderList();
   renderReader();
   const bk = `${id}|${folder}|${uid}`;
-  if (S.bodies[bk]) return;
+  if (S.bodies[bk] && !S.bodies[bk].error) return;
+  delete S.bodies[bk];
   try {
     S.bodies[bk] = await invoke("body", { accountId: id, folder, uid });
   } catch (e) {
-    S.bodies[bk] = { text: `Fehler beim Laden: ${e}`, html: null, reply_to: "" };
+    // Fehler nur anzeigen, nicht dauerhaft merken – beim nächsten Öffnen neuer Versuch
+    S.bodies[bk] = { text: `⚠ ${e}`, html: null, reply_to: "", attachments: [], error: true };
   }
   if (S.selUid === uid) renderReader();
 }
@@ -256,7 +277,9 @@ function renderSidebar() {
       <span class="lbl">Fokus-Modus<span class="sub">${focus ? "Nur ausgewählte Postfächer" : "Alle Postfächer sichtbar"}</span></span>
       <span class="switch ${focus ? "on" : ""}"></span>
     </div>
-    ${body}`;
+    ${body}
+    <div id="sync-status" class="sync-status"></div>`;
+  renderSync();
 }
 
 function renderListHead() {
@@ -265,7 +288,10 @@ function renderListHead() {
   $("#folder-title").textContent = title;
   const h = S.heads[k];
   const n = h ? h.filter((m) => m.unread).length : 0;
-  $("#folder-meta").textContent = h ? (n ? `${n} ungelesen` : `${h.length} Nachrichten`) : "";
+  $("#folder-meta").innerHTML = S.results
+    ? `${S.results.length >= 150 ? "150+" : S.results.length} Treffer in allen Postfächern`
+    : (S.offline ? '<span class="pill-off">Offline</span> ' : "") + (h ? (n ? `${n} ungelesen` : `${h.length} Nachrichten`) : "");
+  $("#folder-title").textContent = S.results ? "Suche" : title;
   $("#refresh").classList.toggle("spin", S.loading.has(k));
 }
 
@@ -278,6 +304,7 @@ function visibleHeads() {
 
 function renderList() {
   const el = $("#messages");
+  if (S.results) return renderResults(el);
   const k = curKey();
   if (!k) { el.innerHTML = ""; return; }
   if (!S.heads[k]) { el.innerHTML = '<div class="skel"></div>'.repeat(8); return; }
@@ -340,6 +367,7 @@ function renderReader() {
   }
   const b = S.bodies[curBodyKey()];
   const c = colorFor(h.from_addr || h.from);
+  const draftBar = isDraftsFolder() ? `<div class="draft-bar">${svg(ICONS.drafts)}<span>Das ist ein Entwurf.</span><button class="btn primary" data-act="edit-draft">Weiter bearbeiten</button></div>` : "";
   let content;
   if (!b) content = `<div class="reader-body"><div class="text"><div class="skel" style="height:14px;width:60%"></div><div class="skel" style="height:14px;width:80%"></div><div class="skel" style="height:14px;width:45%"></div></div></div>`;
   else if (b.html) {
@@ -385,7 +413,7 @@ function renderReader() {
           </div>
         </div>
       </div>
-    </div>${attHtml}${content}`;
+    </div>${draftBar}${attHtml}${content}`;
   if (b && b.html) {
     const frame = el.querySelector("iframe");
     wireIframe(frame);
@@ -452,12 +480,18 @@ function suggestions(q) {
   return out.slice(0, 7);
 }
 
-function openCompose({ to = "", cc = "", subject = "", quote = "", forward = null, fwdAtts = [] } = {}) {
+function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", forward = null, fwdAtts = [], files = [], draftId = null, accId = null, sig = null } = {}) {
   if (!S.cfg.accounts.length) return openSettings("accounts");
-  const st = { accId: S.accId ?? S.cfg.accounts[0].id, sig: account(S.accId)?.default_signature ?? 0, files: [], forward, fwdAtts: [...fwdAtts], sugg: [], si: 0 };
+  const startAcc = accId ?? S.accId ?? S.cfg.accounts[0].id;
+  const st = {
+    accId: startAcc, sig: sig ?? account(startAcc)?.default_signature ?? 0,
+    files: [...files], forward, fwdAtts: [...fwdAtts], draftId, sugg: [], si: 0, busy: false,
+  };
   const root = $("#modal-root");
   root.innerHTML = `<div class="overlay"><div class="modal">
-    <div class="modal-head"><h3>${forward ? "Weiterleiten" : "Neue Nachricht"}</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+    <div class="modal-head"><h3>${draftId ? "Entwurf" : forward ? "Weiterleiten" : "Neue Nachricht"}</h3>
+      <span id="c-state" class="muted" style="font-size:12.5px"></span>
+      <button class="icon-btn" data-close title="Schließen (wird als Entwurf gespeichert)">${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
     <div class="modal-body">
       <div class="field"><label>Von</label><select id="c-from">${S.cfg.accounts.map((a) => `<option value="${a.id}" ${a.id === st.accId ? "selected" : ""}>${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`).join("")}</select></div>
       <div class="field rel"><label>An</label><input id="c-to" class="rcpt" value="${esc(to)}" placeholder="Name oder Adresse – mehrere mit Komma" autocomplete="off" />
@@ -473,6 +507,8 @@ function openCompose({ to = "", cc = "", subject = "", quote = "", forward = nul
     <div class="modal-foot">
       <span class="muted" style="font-size:12.5px">Signatur</span><div id="c-sigs" class="segmented"></div>
       <span class="grow"></span>
+      ${draftId ? `<button class="icon-btn" id="c-discard" title="Entwurf verwerfen">${svg(ICONS.trash)}</button>` : ""}
+      <button class="btn" id="c-draft" title="Als Entwurf speichern (Strg+S)">${svg(ICONS.drafts)} Entwurf</button>
       <label class="btn" title="Datei anhängen">${svg('<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>')} Anhang<input type="file" id="c-file" multiple hidden /></label>
       <button class="btn primary" id="c-send">${svg('<path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/>')} Senden</button>
     </div></div></div>`;
@@ -513,7 +549,7 @@ function openCompose({ to = "", cc = "", subject = "", quote = "", forward = nul
   // CC/BCC einblenden
   const showCc = () => { $("#c-ccrow").hidden = false; $("#c-bccrow").hidden = false; $("#c-ccbtn").hidden = true; };
   $("#c-ccbtn").onclick = () => { showCc(); $("#c-cc").focus(); };
-  if (cc) { $("#c-cc").value = cc; showCc(); }
+  if (cc || bcc) { $("#c-cc").value = cc; $("#c-bcc").value = bcc; showCc(); }
 
   // Empfänger-Autovervollständigung (Kontakte + bekannte Absender) für An/CC/BCC
   const toEl = $("#c-to"), sg = $("#c-sugg");
@@ -546,34 +582,99 @@ function openCompose({ to = "", cc = "", subject = "", quote = "", forward = nul
   });
   sg.addEventListener("mousedown", (e) => { const b = e.target.closest("[data-pick]"); if (b) { e.preventDefault(); pick(Number(b.dataset.pick)); } });
 
+  // Nachricht aus den Feldern zusammensetzen
   const clean = (v) => v.trim().replace(/[,;]\s*$/, "");
-  const send = async () => {
-    const to = clean(toEl.value), ccv = clean($("#c-cc").value), bccv = clean($("#c-bcc").value);
-    if (!to && !ccv && !bccv) return toEl.focus();
+  const fields = () => ({ to: clean(toEl.value), cc: clean($("#c-cc").value), bcc: clean($("#c-bcc").value), subject: $("#c-subj").value, text: $("#c-body").value });
+  const snapshot = () => JSON.stringify([fields(), st.files.length, st.fwdAtts.length, st.sig, st.accId]);
+  let saved = snapshot();
+  const mail = () => {
+    const f = fields();
     const s = signatureOf(account(st.accId), st.sig);
-    let body = $("#c-body").value;
+    let body = f.text;
     if (s && s.text) {
       // Bei Weiterleitung/Antwort Signatur vor das Zitat setzen
       const cut = body.search(/\n\n\n(Am .* schrieb|---------- Weitergeleitete)/);
       body = cut >= 0 ? `${body.slice(0, cut)}\n\n-- \n${s.text}${body.slice(cut)}` : `${body}\n\n-- \n${s.text}`;
     }
+    return {
+      accountId: st.accId, to: f.to, cc: f.cc, bcc: f.bcc, subject: f.subject, body,
+      attachments: st.files.map(({ name, mime, data }) => ({ name, mime, data })),
+      forward: st.forward && st.fwdAtts.length ? st.forward : null,
+      draftId: st.draftId,
+    };
+  };
+  const setState = (t) => { const el = $("#c-state"); if (el) el.textContent = t; };
+
+  const saveDraft = async ({ quiet = false } = {}) => {
+    if (st.busy) return false;
+    st.busy = true;
+    setState("Speichere Entwurf …");
+    try {
+      // Entwurf ohne Signatur speichern – sie wird beim Senden wieder angehängt
+      const m = mail();
+      m.body = fields().text;
+      const r = await invoke("save_draft", { mail: m });
+      st.draftId = r.draft_id;
+      // Original-Anhänge stecken jetzt im Entwurf selbst
+      if (st.forward) { st.forward = null; }
+      saved = snapshot();
+      forgetFolder(st.accId, (f) => f === r.folder);
+      setState(`Entwurf gespeichert ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+      if (!quiet) toast("Als Entwurf gespeichert", "ok");
+      if (S.cur && S.cur.id === st.accId && S.cur.folder === r.folder) loadHeads(S.cur.id, S.cur.folder);
+      return true;
+    } catch (e) {
+      setState("");
+      toast(`Entwurf konnte nicht gespeichert werden: ${e}`, "err");
+      return false;
+    } finally { st.busy = false; }
+  };
+
+  // Beim Schließen: ungespeicherte Änderungen automatisch als Entwurf sichern
+  S.closeGuard = async () => {
+    const f = fields();
+    const empty = !f.to && !f.cc && !f.bcc && !f.subject.trim() && !f.text.trim() && !st.files.length;
+    if (snapshot() === saved || (empty && !st.draftId)) return true;
+    const ok = await saveDraft();
+    if (!ok) return confirm("Der Entwurf konnte nicht gespeichert werden. Trotzdem schließen? Der Text geht verloren.");
+    return true;
+  };
+
+  const send = async () => {
+    const m = mail();
+    if (!m.to && !m.cc && !m.bcc) return toEl.focus();
     const btn = $("#c-send");
     btn.disabled = true; btn.lastChild.textContent = " Sende …";
     try {
-      await invoke("send_mail", {
-        accountId: st.accId, to, cc: ccv, bcc: bccv, subject: $("#c-subj").value, body,
-        attachments: st.files.map(({ name, mime, data }) => ({ name, mime, data })),
-        forward: st.forward && st.fwdAtts.length ? st.forward : null,
-      });
+      const r = await invoke("send_mail", { mail: m });
+      S.closeGuard = null;
       closeModal();
-      toast("Nachricht gesendet", "ok");
+      if (r.warning) toast(r.warning, "err"); else toast("Nachricht gesendet", "ok");
+      if (r.sent_folder) forgetFolder(m.accountId, (f) => f === r.sent_folder);
+      if (m.draftId) forgetFolder(m.accountId, (f) => folderInfo(f, m.accountId).icon === "drafts");
+      if (S.cur) loadHeads(S.cur.id, S.cur.folder);
     } catch (e) {
       btn.disabled = false; btn.lastChild.textContent = " Senden";
       toast(String(e), "err");
     }
   };
   $("#c-send").onclick = send;
-  root.querySelector(".modal").addEventListener("keydown", (e) => { if (e.ctrlKey && e.key === "Enter") send(); });
+  $("#c-draft").onclick = () => saveDraft();
+  const disc = $("#c-discard");
+  if (disc) disc.onclick = async () => {
+    if (!confirm("Entwurf verwerfen?")) return;
+    try {
+      await invoke("discard_draft", { accountId: st.accId, draftId: st.draftId });
+      forgetFolder(st.accId, (f) => folderInfo(f, st.accId).icon === "drafts");
+      S.closeGuard = null; closeModal();
+      toast("Entwurf verworfen", "ok");
+      if (S.cur && folderInfo(S.cur.folder, S.cur.id).icon === "drafts") { S.selUid = null; loadHeads(S.cur.id, S.cur.folder); renderReader(); }
+    } catch (e) { toast(String(e), "err"); }
+  };
+  root.querySelector(".modal").addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.key === "Enter") send();
+    if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
+  });
   (to ? $("#c-body") : toEl).focus();
   if (quote) $("#c-body").setSelectionRange(0, 0);
 }
@@ -594,6 +695,109 @@ async function replyOrForward(fwd) {
     const subj = /^(re|aw):/i.test(h.subject) ? h.subject : "Re: " + h.subject;
     openCompose({ to: b.reply_to || h.from_addr, subject: subj, quote: `\n\n\nAm ${fmtLong(h.ts)} schrieb ${h.from} <${h.from_addr}>:\n${quoted}` });
   }
+}
+
+// ---------------------------------------------------------------- Entwürfe
+const isDraftsFolder = () => S.cur && folderInfo(S.cur.folder, S.cur.id).icon === "drafts";
+
+async function editDraft() {
+  const h = curHead();
+  if (!h) return;
+  try {
+    const b = await ensureBody();
+    const files = (await invoke("get_attachments", { accountId: S.cur.id, folder: S.cur.folder, uid: h.uid }))
+      .map((a) => ({ ...a, size: Math.floor(a.data.length * 3 / 4) }));
+    openCompose({
+      accId: S.cur.id, to: b.to, cc: b.cc, bcc: b.bcc, subject: h.subject === "(kein Betreff)" ? "" : h.subject,
+      quote: (b.text || "").replace(/\s+$/, ""), files, draftId: b.message_id || null,
+    });
+  } catch (e) { toast(`Entwurf konnte nicht geöffnet werden: ${e}`, "err"); }
+}
+
+// ---------------------------------------------------------------- Volltextsuche
+let searchTimer = null, searchSeq = 0;
+function onSearchInput(v) {
+  S.search = v;
+  clearTimeout(searchTimer);
+  if (v.trim().length < 2) { S.results = null; renderList(); renderListHead(); return; }
+  renderList(); // sofort lokal filtern
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq;
+    try {
+      const hits = await invoke("search", { query: v.trim() });
+      if (seq !== searchSeq || S.search !== v) return;
+      S.results = hits;
+    } catch (e) { S.results = null; toast(String(e), "err"); }
+    renderList(); renderListHead();
+  }, 220);
+}
+
+function snippetHtml(s) {
+  return esc(s).replace(/\u0001/g, "<mark>").replace(/\u0002/g, "</mark>").replace(/\s+/g, " ");
+}
+
+function renderResults(el) {
+  const hits = S.results;
+  if (!hits.length) {
+    el.innerHTML = `<div class="empty-hint" style="text-align:center;padding-top:40px">Keine Treffer.<br><small>Gesucht wird in allen offline gespeicherten Mails.</small></div>`;
+    return;
+  }
+  el.innerHTML = hits.map((m, i) => {
+    const acc = account(m.account);
+    const fi = folderInfo(m.folder, m.account);
+    const active = S.cur && S.cur.id === m.account && S.cur.folder === m.folder && S.selUid === m.uid;
+    return `<div class="msg hit ${m.unread ? "unread" : ""} ${active ? "active" : ""}" data-hit="${i}">
+      <div class="av" style="background:${colorFor(m.from_addr || m.from)}">${esc(initials(m.from))}</div>
+      <div class="from">${esc(m.from || m.from_addr)}</div>
+      <div class="time">${fmtTime(m.ts)}</div>
+      <div class="subj">${esc(m.subject)}</div>
+      ${m.snippet ? `<div class="snip">${snippetHtml(m.snippet)}</div>` : ""}
+      <div class="where">${acc ? `<span class="dot" style="background:${accColor(acc)}"></span>${esc(acc.name || acc.email)} · ` : ""}${esc(fi.label)}</div>
+    </div>`;
+  }).join("");
+}
+
+function openHit(i) {
+  const m = S.results?.[i];
+  if (!m) return;
+  const k = key(m.account, m.folder);
+  S.accId = m.account;
+  S.cur = { id: m.account, folder: m.folder };
+  const list = S.heads[k] || (S.heads[k] = []);
+  if (!list.some((x) => x.uid === m.uid)) list.push({ uid: m.uid, from: m.from, from_addr: m.from_addr, subject: m.subject, ts: m.ts, unread: m.unread });
+  renderRail(); renderSidebar();
+  openMessage(m.uid);
+}
+
+// ---------------------------------------------------------------- Offline-Sync
+function renderSync() {
+  const el = $("#sync-status");
+  if (!el) return;
+  const st = S.sync;
+  if (st.running) {
+    el.innerHTML = `<span class="spinner"></span><span>Offline-Sync: ${esc(st.folder || "…")}${st.total ? ` · ${st.done}/${st.total}` : ""}</span>`;
+  } else if (S.offline) {
+    el.innerHTML = `<span class="pill-off">Offline</span><span>Zeige gespeicherte Mails</span>`;
+  } else if (st.stats) {
+    el.innerHTML = `${svg('<path d="M20 6 9 17l-5-5"/>')}<span>${st.stats.offline.toLocaleString("de-DE")} Mails offline verfügbar</span>`;
+  } else el.innerHTML = "";
+}
+
+async function startSync() {
+  try {
+    if (await invoke("start_sync")) { S.sync.running = true; renderSync(); }
+  } catch {}
+}
+
+function initSyncEvents() {
+  const ev = window.__TAURI__.event;
+  ev.listen("sync-progress", (e) => { Object.assign(S.sync, { running: true, folder: e.payload.folder, done: e.payload.done, total: e.payload.total }); renderSync(); });
+  ev.listen("sync-done", (e) => {
+    S.sync = { running: false, stats: e.payload };
+    renderSync();
+    if (S.cur && !S.search) loadHeads(S.cur.id, S.cur.folder);
+  });
+  ev.listen("sync-error", (e) => console.warn("Sync:", e.payload));
 }
 
 // ---------------------------------------------------------------- Kontakte
@@ -708,7 +912,11 @@ function initResizers() {
   });
 }
 
-function closeModal() { $("#modal-root").innerHTML = ""; }
+function closeModal() { S.closeGuard = null; $("#modal-root").innerHTML = ""; }
+async function requestClose() {
+  if (S.closeGuard && !(await S.closeGuard())) return;
+  closeModal();
+}
 
 // ---------------------------------------------------------------- Einstellungen
 const PRESETS = {
@@ -744,7 +952,16 @@ function accountForm(a) {
     <label class="inp">IMAP-Server<div class="row2"><input id="f-imap" value="${v(a?.imap_host)}" placeholder="imap.firma.de" /><input id="f-imapport" value="${v(a?.imap_port ?? 993)}" /></div></label>
     <label class="inp">SMTP-Server<div class="row2"><input id="f-smtp" value="${v(a?.smtp_host)}" placeholder="smtp.firma.de" /><input id="f-smtpport" value="${v(a?.smtp_port ?? 587)}" /></div></label>
     <div class="full hint">IMAP mit SSL/TLS (Port 993). SMTP: Port 465 = SSL/TLS, sonst STARTTLS. Das Passwort wird in der Windows-Anmeldeinformationsverwaltung gespeichert.</div>
+    <label class="check full"><input type="checkbox" id="f-savesent" ${a ? (a.save_sent ? "checked" : "") : "checked"}/> <span><b>Gesendete Mails im Gesendet-Ordner speichern</b><br>
+      <small class="muted">Legt nach dem Senden eine Kopie per IMAP ab. Bei Gmail und Outlook/Microsoft 365 ausschalten – die speichern selbst, sonst landet jede Mail doppelt.</small></span></label>
+    <label class="inp">Gesendet-Ordner${folderSelect("f-sentfolder", a, a?.sent_folder)}</label>
+    <label class="inp">Entwürfe-Ordner${folderSelect("f-draftsfolder", a, a?.drafts_folder)}</label>
   </div>`;
+}
+
+function folderSelect(id, a, value) {
+  const list = (a && S.folders[a.id]) || [];
+  return `<select id="${id}"><option value="">Automatisch erkennen</option>${list.map((f) => `<option value="${esc(f)}" ${f === value ? "selected" : ""}>${esc("\u00a0".repeat(folderInfo(f, a.id).depth * 3) + folderInfo(f, a.id).label)}</option>`).join("")}</select>`;
 }
 
 function renderSettings() {
@@ -791,6 +1008,7 @@ function renderSettings() {
     const p = PRESETS[d];
     if (!$("#f-user").value) $("#f-user").value = email.value;
     if (p && !$("#f-imap").value) { $("#f-imap").value = p[0]; $("#f-smtp").value = p[1]; $("#f-smtpport").value = p[2]; }
+    if (/gmail|googlemail|outlook|hotmail|live\./.test(d || "")) $("#f-savesent").checked = false;
     else if (d && !$("#f-imap").value) { $("#f-imap").value = "imap." + d; $("#f-smtp").value = "smtp." + d; }
   });
   const sa = $("#sig-acc");
@@ -814,6 +1032,9 @@ async function saveAccount() {
     imap_port: Number(val("#f-imapport")) || 993,
     smtp_host: val("#f-smtp") || imap.replace(/^imap\./, "smtp."),
     smtp_port: Number(val("#f-smtpport")) || 587,
+    save_sent: $("#f-savesent").checked,
+    sent_folder: $("#f-sentfolder").value,
+    drafts_folder: $("#f-draftsfolder").value,
   });
   try {
     if (pw) await invoke("set_password", { id: a.id, password: pw });
@@ -870,9 +1091,11 @@ document.addEventListener("click", (e) => {
   const mt = t.closest("[data-mailto]");
   if (mt) { const c = S.cfg.contacts.find((x) => x.id === Number(mt.dataset.mailto)); closeModal(); return openCompose({ to: c.email + ", " }); }
   if (!t.closest(".menu-wrap")) closeMenus();
+  const hit = t.closest("[data-hit]");
+  if (hit) return openHit(Number(hit.dataset.hit));
   const msg = t.closest("[data-uid]");
   if (msg) return openMessage(Number(msg.dataset.uid));
-  if (t.closest("[data-close]") || t.classList.contains("overlay")) return closeModal();
+  if (t.closest("[data-close]") || t.classList.contains("overlay")) return requestClose();
   const tab = t.closest("[data-tab]");
   if (tab) { settingsState.tab = tab.dataset.tab; settingsState.edit = null; return renderSettings(); }
   const ed = t.closest("[data-edit]");
@@ -898,6 +1121,7 @@ document.addEventListener("click", (e) => {
     case "toggle-focus": return toggleFocus();
     case "edit-focus": S.editFocus = !S.editFocus; return renderSidebar();
     case "images": S.showImages = true; return renderReader();
+    case "edit-draft": return editDraft();
     case "fwd-menu": { const m = $("#fwd-menu"); const was = m.hidden; closeMenus(); m.hidden = !was; return; }
     case "contacts": closeMenus(); return openContacts();
     case "new-contact": contactsState.edit = "new"; contactsState.prefill = null; return renderContacts();
@@ -938,12 +1162,17 @@ function toggleFocus() {
   toast(S.cfg.focus_active ? "Fokus-Modus an" : "Fokus-Modus aus");
 }
 
-$("#search").addEventListener("input", (e) => { S.search = e.target.value; renderList(); });
+$("#search").addEventListener("input", (e) => onSearchInput(e.target.value));
+$("#search").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.value) { e.stopPropagation(); e.target.value = ""; onSearchInput(""); }
+  if (e.key === "Enter" && S.results?.length) { openHit(0); }
+});
+$("#messages").addEventListener("dblclick", (e) => { if (e.target.closest(".msg[data-uid]") && isDraftsFolder()) editDraft(); });
 $("#refresh").addEventListener("click", () => S.cur && loadHeads(S.cur.id, S.cur.folder));
 
 document.addEventListener("keydown", (e) => {
   const inField = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
-  if (e.key === "Escape") { closeMenus(); if ($("#modal-root").innerHTML) return closeModal(); if (inField) return document.activeElement.blur(); }
+  if (e.key === "Escape") { closeMenus(); if ($("#modal-root").innerHTML) return requestClose(); if (inField) return document.activeElement.blur(); }
   if (e.ctrlKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
     const a = S.cfg.accounts[Number(e.key) - 1];
     if (a) { e.preventDefault(); switchAccount(a.id); }
@@ -955,6 +1184,14 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); return openCompose(); }
   if (e.key === "F5") { e.preventDefault(); return S.cur && loadHeads(S.cur.id, S.cur.folder); }
   if (inField || $("#modal-root").innerHTML) return;
+  if (S.results && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    let i = S.results.findIndex((m) => S.cur && m.account === S.cur.id && m.folder === S.cur.folder && m.uid === S.selUid);
+    i = e.key === "ArrowDown" ? Math.min(S.results.length - 1, i + 1) : Math.max(0, i - 1);
+    openHit(i);
+    document.querySelector(`.msg[data-hit="${i}"]`)?.scrollIntoView({ block: "nearest" });
+    return;
+  }
   if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "j" || e.key === "k") {
     const list = visibleHeads();
     if (!list.length) return;
@@ -964,6 +1201,7 @@ document.addEventListener("keydown", (e) => {
     openMessage(list[i].uid);
     document.querySelector(`.msg[data-uid="${list[i].uid}"]`)?.scrollIntoView({ block: "nearest" });
   }
+  if (e.key === "Enter" && isDraftsFolder() && curHead()) return editDraft();
   if (e.key === "r") replyOrForward(false);
   if (e.key === "w" && curHead()) { const m = $("#fwd-menu"); if (m) m.hidden = !m.hidden; }
   if (e.key === "Delete" && curHead()) { e.preventDefault(); deleteMessages([S.selUid], e.shiftKey); }
@@ -983,6 +1221,7 @@ function removeLocally(uids) {
     next = vis.slice(i + 1).find((m) => !uids.includes(m.uid)) || vis.slice(0, i).reverse().find((m) => !uids.includes(m.uid)) || null;
   }
   S.heads[k] = before.filter((m) => !uids.includes(m.uid));
+  if (S.results) S.results = S.results.filter((m) => !(m.account === S.cur.id && m.folder === S.cur.folder && uids.includes(m.uid)));
   if (uids.includes(sel)) {
     S.selUid = null;
     if (next) openMessage(next.uid); else { renderList(); renderReader(); }
@@ -1107,6 +1346,7 @@ function messageMenu(uid) {
   const contacts = [...S.cfg.contacts].sort((a, b) => b.quick - a.quick);
   const trash = isTrashFolder(id, folder);
   return [
+    ...(folderInfo(folder, id).icon === "drafts" ? [{ label: "Entwurf bearbeiten", icon: I.edit, kbd: "Enter", run: async () => { await openMessage(uid); editDraft(); } }, "-"] : []),
     { label: "Antworten", icon: I.reply, kbd: "R", run: async () => { await openMessage(uid); replyOrForward(false); } },
     { label: "Weiterleiten …", icon: I.fwd, run: async () => { await openMessage(uid); replyOrForward(true); } },
     { label: "Weiterleiten an", icon: I.fwd, sub: contacts.map((c) => ({ label: `${c.quick ? "⚡ " : ""}${c.name || c.email}`, icon: I.contact, run: async () => { await openMessage(uid); quickForward(c.id); } })) },
@@ -1167,6 +1407,8 @@ document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const sel = String(getSelection() || "").trim();
   if (sel) return showCtx(e.clientX, e.clientY, selectionMenu(sel));
+  const hitEl = t.closest(".msg[data-hit]");
+  if (hitEl) { openHit(Number(hitEl.dataset.hit)); return showCtx(e.clientX, e.clientY, messageMenu(S.selUid)); }
   const msg = t.closest(".msg[data-uid]");
   if (msg) {
     const uid = Number(msg.dataset.uid);
@@ -1227,6 +1469,7 @@ setInterval(() => {
 // ---------------------------------------------------------------- Start
 (async function init() {
   initResizers();
+  initSyncEvents();
   S.cfg = await invoke("get_config");
   S.cfg.contacts ||= [];
   S.cfg.accounts.forEach((a) => { a.signatures ||= []; });
@@ -1241,4 +1484,7 @@ setInterval(() => {
     loadFolders(a.id);
     if (a.id !== S.cur.id) loadHeads(a.id, "INBOX"); // Badges für andere Konten
   }
+  invoke("cache_stats").then((st) => { S.sync.stats = st; renderSync(); }).catch(() => {});
+  setTimeout(startSync, 4000);
+  setInterval(startSync, 10 * 60 * 1000);
 })();
