@@ -1,12 +1,13 @@
 [package]
 name = "mailline"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
 base64 = "0.23.1"
 dirs = "7.0.0"
+hex = "0.4.3"
 imap = "2.4.1"
 keyring = { version = "3", features = ["windows-native"] }
 lettre = "0.11.23"
@@ -15,7 +16,10 @@ native-tls = "0.2.18"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 tauri = "2"
+tauri-plugin-single-instance = "2"
+ureq = { version = "3.5.1", features = ["json"] }
 
 [build-dependencies]
 tauri-build = "2"

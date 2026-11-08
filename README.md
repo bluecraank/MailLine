@@ -31,8 +31,8 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 - **Resizable columns**: drag to adjust, double-click to reset.
 - **Server presets** for Gmail, Outlook, GMX, web.de, T-Online, iCloud, Posteo, mailbox.org and Yahoo.
 - **Passwords** are stored in the Windows Credential Manager, not in plain text on disk.
-
-> The UI is currently in German.
+- **German & English UI**: follows your Windows language. Switch it in Settings → General.
+- **Built-in updates**: MailLine checks GitHub Releases on startup. One click downloads the new version, verifies its SHA-256 checksum and restarts.
 
 ## Keyboard shortcuts
 
@@ -66,7 +66,7 @@ The release `.exe` is about 11 MB.
 
 ## Download
 
-Get the latest `mailline.exe` from [Releases](../../releases). No installation needed.
+Get the latest `mailline.exe` from [Releases](../../releases). No installation needed. Put it somewhere you have write access (e.g. your user folder), so the built-in updater can replace it.
 
 The binary isn't code-signed, so Windows SmartScreen may complain on first launch ("More info" → "Run anyway").
 
@@ -99,8 +99,10 @@ src/
   backend.rs   IMAP, SMTP, MIME parsing, sync, drafts
   cache.rs     Offline cache & full-text index (SQLite/FTS5)
   config.rs    Settings & passwords
+  update.rs    Update check & self-update via GitHub Releases
 ui/
   index.html   Skeleton
+  i18n.js      Translations (add a language here)
   style.css    Design (light/dark)
   app.js       The entire UI
 ```

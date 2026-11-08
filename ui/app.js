@@ -21,6 +21,8 @@ const S = {
   offline: false,
   sync: { running: false },
   closeGuard: null,     // wird vor dem Schließen eines Dialogs gefragt (Entwurf sichern)
+  update: null,         // verfügbares Update (GitHub-Release)
+  version: "",
 };
 
 const key = (id, folder) => `${id}|${folder}`;
@@ -48,28 +50,28 @@ function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts * 1000);
   const today = startOfDay(Date.now());
-  if (d.getTime() >= today) return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  if (d.getTime() >= today - 6 * DAY) return d.toLocaleDateString("de-DE", { weekday: "short" });
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  if (d.getTime() >= today) return d.toLocaleTimeString(LOCALE(), { hour: "2-digit", minute: "2-digit" });
+  if (d.getTime() >= today - 6 * DAY) return d.toLocaleDateString(LOCALE(), { weekday: "short" });
+  return d.toLocaleDateString(LOCALE(), { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 function dayGroup(ts) {
-  if (!ts) return "Älter";
+  if (!ts) return window.t("Älter");
   const t = ts * 1000, today = startOfDay(Date.now());
-  if (t >= today) return "Heute";
-  if (t >= today - DAY) return "Gestern";
-  if (t >= today - 6 * DAY) return "Diese Woche";
-  if (t >= today - 30 * DAY) return "Diesen Monat";
-  return "Älter";
+  if (t >= today) return window.t("Heute");
+  if (t >= today - DAY) return window.t("Gestern");
+  if (t >= today - 6 * DAY) return window.t("Diese Woche");
+  if (t >= today - 30 * DAY) return window.t("Diesen Monat");
+  return window.t("Älter");
 }
 function fmtLong(ts) {
-  return ts ? new Date(ts * 1000).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  return ts ? new Date(ts * 1000).toLocaleString(LOCALE(), { weekday: "short", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 }
 
 let toastTimer;
 function toast(msg, type = "") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
-  el.textContent = msg;
+  el.textContent = tErr(t(String(msg)));
   $("#toasts").appendChild(el);
   setTimeout(() => el.remove(), type === "err" ? 6000 : 2800);
 }
@@ -90,13 +92,13 @@ function folderInfo(name, id) {
   const leaf = meta ? meta.label : name.split(/[/.]/).filter(Boolean).pop() || name;
   const depth = meta ? meta.depth : 0;
   const l = leaf.toLowerCase();
-  if (name.toUpperCase() === "INBOX") return { label: "Posteingang", icon: "inbox", rank: 0, depth: 0 };
+  if (name.toUpperCase() === "INBOX") return { label: t("Posteingang"), icon: "inbox", rank: 0, depth: 0 };
   if (depth === 0) {
-    if (/^(sent|gesendet|sent items|sent messages|gesendete)/.test(l)) return { label: "Gesendet", icon: "sent", rank: 1, depth };
-    if (/^(drafts|entw)/.test(l)) return { label: "Entwürfe", icon: "drafts", rank: 2, depth };
-    if (/^(archive|archiv|all mail|alle nachrichten)/.test(l)) return { label: "Archiv", icon: "archive", rank: 3, depth };
-    if (/^(junk|spam|junk-e-mail|bulk)/.test(l)) return { label: "Spam", icon: "junk", rank: 4, depth };
-    if (/^(trash|papierkorb|gelöscht|deleted|bin)/.test(l)) return { label: "Papierkorb", icon: "trash", rank: 5, depth };
+    if (/^(sent|gesendet|sent items|sent messages|gesendete)/.test(l)) return { label: t("Gesendet"), icon: "sent", rank: 1, depth };
+    if (/^(drafts|entw)/.test(l)) return { label: t("Entwürfe"), icon: "drafts", rank: 2, depth };
+    if (/^(archive|archiv|all mail|alle nachrichten)/.test(l)) return { label: t("Archiv"), icon: "archive", rank: 3, depth };
+    if (/^(junk|spam|junk-e-mail|bulk)/.test(l)) return { label: t("Spam"), icon: "junk", rank: 4, depth };
+    if (/^(trash|papierkorb|gelöscht|deleted|bin)/.test(l)) return { label: t("Papierkorb"), icon: "trash", rank: 5, depth };
   }
   return { label: leaf, icon: "folder", rank: 9, depth };
 }
@@ -211,14 +213,14 @@ function renderRail() {
     const n = unreadFor(a.id);
     const c = accColor(a);
     return `<button class="avatar-btn ${a.id === S.accId ? "active" : ""}" data-acc="${a.id}"
-      style="--c:${c};background:linear-gradient(135deg, ${c}, ${c}cc)" title="${esc(a.name)} – ${esc(a.email)}  (Strg+${i + 1})">
+      style="--c:${c};background:linear-gradient(135deg, ${c}, ${c}cc)" title="${esc(a.name)} – ${esc(a.email)}  (${t("Strg")}+${i + 1})">
       ${esc(initials(a.name || a.email))}${n ? `<span class="badge">${n > 99 ? "99+" : n}</span>` : ""}</button>`;
   }).join("");
   $("#rail").innerHTML = `${accs}
-    <button class="rail-btn" data-act="add-account" title="Konto hinzufügen">${svg('<path d="M12 5v14M5 12h14"/>')}</button>
+    <button class="rail-btn" data-act="add-account" title="${t("Konto hinzufügen")}">${svg('<path d="M12 5v14M5 12h14"/>')}</button>
     <div class="rail-spacer"></div>
-    <button class="rail-btn solid" data-act="contacts" title="Kontakte">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>')}</button>
-    <button class="rail-btn solid" data-act="settings" title="Einstellungen">${svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')}</button>`;
+    <button class="rail-btn solid" data-act="contacts" title="${t("Kontakte")}">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>')}</button>
+    <button class="rail-btn solid" data-act="settings" title="${t("Einstellungen")}">${svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')}</button>`;
 }
 
 function folderRow(id, name, { showAcc = false } = {}) {
@@ -236,7 +238,7 @@ function folderRow(id, name, { showAcc = false } = {}) {
   return `<div class="folder ${active ? "active" : ""}" data-open="${esc(k)}" style="padding-left:${10 + info.depth * 14}px" title="${esc(name)}">
     ${lead}<span class="fname">${label}</span>
     ${n ? `<span class="count">${n}</span>` : ""}
-    <button class="star ${isFocus ? "on" : ""}" data-star="${esc(k)}" title="Als Fokus-Postfach markieren">${svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>')}</button>
+    <button class="star ${isFocus ? "on" : ""}" data-star="${esc(k)}" title="${t("Als Fokus-Postfach markieren")}">${svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>')}</button>
   </div>`;
 }
 
@@ -246,8 +248,8 @@ function renderSidebar() {
   let body = "";
 
   if (!acc) {
-    $("#sidebar").innerHTML = `<div class="empty-hint">Noch kein Konto eingerichtet.</div>
-      <button class="compose-btn" data-act="add-account">Konto hinzufügen</button>`;
+    $("#sidebar").innerHTML = `<div class="empty-hint">${t("Noch kein Konto eingerichtet.")}</div>
+      <button class="compose-btn" data-act="add-account">${t("Konto hinzufügen")}</button>`;
     return;
   }
 
@@ -255,15 +257,15 @@ function renderSidebar() {
     const items = S.cfg.focus_folders
       .map((k) => { const i = k.indexOf("|"); return [Number(k.slice(0, i)), k.slice(i + 1)]; })
       .filter(([id]) => account(id));
-    body = `<div class="section-label">Fokus-Postfächer <button data-act="edit-focus">Bearbeiten</button></div>
+    body = `<div class="section-label">${t("Fokus-Postfächer")} <button data-act="edit-focus">${t("Bearbeiten")}</button></div>
       <div class="folders">${items.length
         ? items.map(([id, f]) => folderRow(id, f, { showAcc: true })).join("")
-        : `<div class="empty-hint">Noch keine Fokus-Postfächer.<br>Tippe auf <b>Bearbeiten</b> und markiere Ordner mit ★ – egal aus welchem Konto.</div>`}</div>`;
+        : `<div class="empty-hint">${t("Noch keine Fokus-Postfächer.")}<br>${t("Tippe auf <b>Bearbeiten</b> und markiere Ordner mit ★ – egal aus welchem Konto.")}</div>`}</div>`;
   } else {
     const list = S.folders[acc.id];
-    body = `<div class="section-label">Ordner ${S.editFocus
-        ? `<button data-act="edit-focus">Fertig</button>`
-        : `<button data-act="edit-focus" title="Fokus-Postfächer auswählen">★ Fokus wählen</button>`}</div>
+    body = `<div class="section-label">${t("Ordner")} ${S.editFocus
+        ? `<button data-act="edit-focus">${t("Fertig")}</button>`
+        : `<button data-act="edit-focus" title="${t("Fokus-Postfächer auswählen")}">${t("★ Fokus wählen")}</button>`}</div>
       <div class="folders ${S.editFocus ? "editing" : ""}">${list
         ? list.map((f) => folderRow(acc.id, f)).join("")
         : `<div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div>`}</div>`;
@@ -271,13 +273,14 @@ function renderSidebar() {
 
   $("#sidebar").innerHTML = `
     <div class="acc-head"><div class="name">${esc(acc.name || acc.email)}</div><div class="mail">${esc(acc.email)}</div></div>
-    <button class="compose-btn" data-act="compose">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')} Neue Nachricht</button>
-    <div class="focus-toggle" data-act="toggle-focus" title="Strg+Umschalt+F">
+    <button class="compose-btn" data-act="compose">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')} ${t("Neue Nachricht")}</button>
+    <div class="focus-toggle" data-act="toggle-focus" title="${t("Strg+Umschalt+F")}">
       ${svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>')}
-      <span class="lbl">Fokus-Modus<span class="sub">${focus ? "Nur ausgewählte Postfächer" : "Alle Postfächer sichtbar"}</span></span>
+      <span class="lbl">${t("Fokus-Modus")}<span class="sub">${t(focus ? "Nur ausgewählte Postfächer" : "Alle Postfächer sichtbar")}</span></span>
       <span class="switch ${focus ? "on" : ""}"></span>
     </div>
     ${body}
+    ${S.update ? `<button class="update-banner" data-act="show-update">${svg('<path d="M12 19V5M5 12l7-7 7 7"/>')}<span>${t("Update {v} verfügbar", { v: S.update.latest })}</span></button>` : ""}
     <div id="sync-status" class="sync-status"></div>`;
   renderSync();
 }
@@ -289,9 +292,9 @@ function renderListHead() {
   const h = S.heads[k];
   const n = h ? h.filter((m) => m.unread).length : 0;
   $("#folder-meta").innerHTML = S.results
-    ? `${S.results.length >= 150 ? "150+" : S.results.length} Treffer in allen Postfächern`
-    : (S.offline ? '<span class="pill-off">Offline</span> ' : "") + (h ? (n ? `${n} ungelesen` : `${h.length} Nachrichten`) : "");
-  $("#folder-title").textContent = S.results ? "Suche" : title;
+    ? t("{n} Treffer in allen Postfächern", { n: S.results.length >= 150 ? "150+" : S.results.length })
+    : (S.offline ? '<span class="pill-off">Offline</span> ' : "") + (h ? (n ? t("{n} ungelesen", { n }) : t("{n} Nachrichten", { n: h.length })) : "");
+  $("#folder-title").textContent = S.results ? t("Suche") : title;
   $("#refresh").classList.toggle("spin", S.loading.has(k));
 }
 
@@ -310,7 +313,7 @@ function renderList() {
   if (!S.heads[k]) { el.innerHTML = '<div class="skel"></div>'.repeat(8); return; }
   const list = visibleHeads();
   if (!list.length) {
-    el.innerHTML = `<div class="empty-hint" style="text-align:center;padding-top:40px">${S.search ? "Keine Treffer." : "Dieser Ordner ist leer."}</div>`;
+    el.innerHTML = `<div class="empty-hint" style="text-align:center;padding-top:40px">${t(S.search ? "Keine Treffer." : "Dieser Ordner ist leer.")}</div>`;
     return;
   }
   let last = null, html = "";
@@ -320,9 +323,9 @@ function renderList() {
     const c = colorFor(m.from_addr || m.from);
     html += `<div class="msg ${m.unread ? "unread" : ""} ${m.uid === S.selUid ? "active" : ""}" data-uid="${m.uid}">
       <div class="av" style="background:${c}">${esc(initials(m.from))}</div>
-      <div class="from">${esc(m.from || m.from_addr || "(unbekannt)")}</div>
+      <div class="from">${esc(m.from || m.from_addr || t("(unbekannt)"))}</div>
       <div class="time">${fmtTime(m.ts)}</div>
-      <div class="subj">${esc(m.subject)}</div></div>`;
+      <div class="subj">${esc(subjOf(m))}</div></div>`;
   }
   el.innerHTML = html;
 }
@@ -339,7 +342,7 @@ function htmlDoc(html, images) {
 function fmtSize(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+  return `${(n / 1024 / 1024).toFixed(1).replace(".", LANG === "de" ? "," : ".")} MB`;
 }
 function fileIcon(mime, name) {
   const ext = (name.split(".").pop() || "").toUpperCase().slice(0, 4);
@@ -350,6 +353,7 @@ function fileIcon(mime, name) {
 
 const curHead = () => S.cur && (S.heads[curKey()] || []).find((m) => m.uid === S.selUid);
 const curBodyKey = () => `${S.cur.id}|${S.cur.folder}|${S.selUid}`;
+const subjOf = (m) => (m.subject && m.subject !== "(kein Betreff)" ? m.subject : t("(kein Betreff)"));
 const isContact = (addr) => S.cfg.contacts.some((c) => c.email.toLowerCase() === String(addr).toLowerCase());
 
 function renderReader() {
@@ -359,56 +363,56 @@ function renderReader() {
     const n = S.cfg.accounts.length;
     el.innerHTML = `<div class="reader-empty"><div>
       <div class="big">${svg(ICONS.inbox)}</div>
-      <h2>${n ? "Keine Nachricht ausgewählt" : "Willkommen bei MailLine"}</h2>
-      <div>${n ? `<span class="kbd">↑</span> <span class="kbd">↓</span> zum Blättern · <span class="kbd">Strg+N</span> neue Nachricht`
-                : `<button class="btn primary" data-act="add-account" style="margin-top:10px">Erstes Konto hinzufügen</button>`}</div>
+      <h2>${t(n ? "Keine Nachricht ausgewählt" : "Willkommen bei MailLine")}</h2>
+      <div>${n ? `<span class="kbd">↑</span> <span class="kbd">↓</span> ${t("zum Blättern")} · <span class="kbd">${t("Strg+N")}</span> ${t("neue Nachricht")}`
+                : `<button class="btn primary" data-act="add-account" style="margin-top:10px">${t("Erstes Konto hinzufügen")}</button>`}</div>
     </div></div>`;
     return;
   }
   const b = S.bodies[curBodyKey()];
   const c = colorFor(h.from_addr || h.from);
-  const draftBar = isDraftsFolder() ? `<div class="draft-bar">${svg(ICONS.drafts)}<span>Das ist ein Entwurf.</span><button class="btn primary" data-act="edit-draft">Weiter bearbeiten</button></div>` : "";
+  const draftBar = isDraftsFolder() ? `<div class="draft-bar">${svg(ICONS.drafts)}<span>${t("Das ist ein Entwurf.")}</span><button class="btn primary" data-act="edit-draft">${t("Weiter bearbeiten")}</button></div>` : "";
   let content;
   if (!b) content = `<div class="reader-body"><div class="text"><div class="skel" style="height:14px;width:60%"></div><div class="skel" style="height:14px;width:80%"></div><div class="skel" style="height:14px;width:45%"></div></div></div>`;
   else if (b.html) {
     const hasRemote = /<img[^>]+src=["']?https?:/i.test(b.html);
     content = `<div class="reader-body html">
-      ${hasRemote && !S.showImages ? `<div class="img-bar">Externe Bilder wurden zum Schutz deiner Privatsphäre blockiert. <button data-act="images">Bilder laden</button></div>` : ""}
+      ${hasRemote && !S.showImages ? `<div class="img-bar">${t("Externe Bilder wurden zum Schutz deiner Privatsphäre blockiert.")} <button data-act="images">${t("Bilder laden")}</button></div>` : ""}
       <iframe sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe></div>`;
   } else content = `<div class="reader-body"><div class="text">${esc(b.text)}</div></div>`;
 
   const atts = b?.attachments || [];
   const attHtml = atts.length ? `<div class="attachments">
-      ${atts.map((a) => `<div class="att" data-att-open="${a.index}" title="Öffnen">
+      ${atts.map((a) => `<div class="att" data-att-open="${a.index}" title="${t("Öffnen")}">
         ${fileIcon(a.mime, a.name)}<span class="att-meta"><b>${esc(a.name)}</b><span>${fmtSize(a.size)}</span></span>
-        <button class="icon-btn sm" data-att-save="${a.index}" title="In Downloads speichern">${svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>')}</button>
+        <button class="icon-btn sm" data-att-save="${a.index}" title="${t("In Downloads speichern")}">${svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>')}</button>
       </div>`).join("")}
     </div>` : "";
 
   const quick = S.cfg.contacts.filter((x) => x.quick);
   const others = S.cfg.contacts.filter((x) => !x.quick);
   const menu = `<div class="menu" id="fwd-menu" hidden>
-      ${quick.length ? `<div class="menu-label">Schnell-Weiterleiten${atts.length ? ` · inkl. ${atts.length} Anhang${atts.length > 1 ? "e" : ""}` : ""}</div>` : ""}
+      ${quick.length ? `<div class="menu-label">${t("Schnell-Weiterleiten")}${atts.length ? ` · ${t(atts.length > 1 ? "inkl. {n} Anhänge" : "inkl. {n} Anhang", { n: atts.length })}` : ""}</div>` : ""}
       ${quick.map((x) => `<button class="menu-item" data-quickfwd="${x.id}"><span class="mav" style="background:${colorFor(x.email)}">${esc(initials(x.name || x.email))}</span><span><b>${esc(x.name || x.email)}</b><small>${esc(x.email)}</small></span></button>`).join("")}
-      ${others.length ? `<div class="menu-label">Weitere Kontakte</div>` : ""}
+      ${others.length ? `<div class="menu-label">${t("Weitere Kontakte")}</div>` : ""}
       ${others.slice(0, 8).map((x) => `<button class="menu-item" data-quickfwd="${x.id}"><span class="mav" style="background:${colorFor(x.email)}">${esc(initials(x.name || x.email))}</span><span><b>${esc(x.name || x.email)}</b><small>${esc(x.email)}</small></span></button>`).join("")}
-      ${!S.cfg.contacts.length ? `<div class="menu-empty">Noch keine Kontakte. Lege unter <b>Kontakte</b> z. B. deine Buchhaltung an und aktiviere „Schnell-Weiterleiten“.</div>` : ""}
+      ${!S.cfg.contacts.length ? `<div class="menu-empty">${t("Noch keine Kontakte. Lege unter <b>Kontakte</b> z. B. deine Buchhaltung an und aktiviere „Schnell-Weiterleiten“.")}</div>` : ""}
       <div class="menu-sep"></div>
-      <button class="menu-item" data-act="forward">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')}<span><b>Bearbeiten & weiterleiten …</b></span></button>
-      <button class="menu-item" data-act="contacts">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11h5M19.5 8.5v5"/>')}<span><b>Kontakte verwalten …</b></span></button>
+      <button class="menu-item" data-act="forward">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')}<span><b>${t("Bearbeiten & weiterleiten …")}</b></span></button>
+      <button class="menu-item" data-act="contacts">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11h5M19.5 8.5v5"/>')}<span><b>${t("Kontakte verwalten …")}</b></span></button>
     </div>`;
 
   el.innerHTML = `
     <div class="reader-head">
-      <h2>${esc(h.subject)}</h2>
+      <h2>${esc(subjOf(h))}</h2>
       <div class="sender">
         <div class="av" style="background:${c}">${esc(initials(h.from))}</div>
         <div class="who"><b>${esc(h.from)}</b><span>${esc(h.from_addr)} · ${fmtLong(h.ts)}</span></div>
         <div class="actions">
-          ${h.from_addr && !isContact(h.from_addr) ? `<button class="icon-btn" data-act="save-sender" title="Absender als Kontakt speichern">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>')}</button>` : ""}
-          <button class="btn" data-act="reply" title="Antworten (R)">${svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/>')} Antworten</button>
+          ${h.from_addr && !isContact(h.from_addr) ? `<button class="icon-btn" data-act="save-sender" title="${t("Absender als Kontakt speichern")}">${svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>')}</button>` : ""}
+          <button class="btn" data-act="reply" title="${t("Antworten (R)")}">${svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/>')} ${t("Antworten")}</button>
           <div class="menu-wrap">
-            <button class="btn" data-act="fwd-menu" title="Weiterleiten (W)">${svg('<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0-5 5v6"/>')} Weiterleiten an ${svg('<path d="m6 9 6 6 6-6"/>')}</button>
+            <button class="btn" data-act="fwd-menu" title="${t("Weiterleiten (W)")}">${svg('<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0-5 5v6"/>')} ${t("Weiterleiten an")} ${svg('<path d="m6 9 6 6 6-6"/>')}</button>
             ${menu}
           </div>
         </div>
@@ -428,9 +432,9 @@ async function ensureBody() {
 }
 
 function forwardText(h, b) {
-  return `---------- Weitergeleitete Nachricht ----------\nVon: ${h.from} <${h.from_addr}>\nDatum: ${fmtLong(h.ts)}\nBetreff: ${h.subject}\n\n${b.text || ""}`;
+  return `---------- ${t("Weitergeleitete Nachricht")} ----------\n${t("Von")}: ${h.from} <${h.from_addr}>\n${t("Datum")}: ${fmtLong(h.ts)}\n${t("Betreff")}: ${h.subject}\n\n${b.text || ""}`;
 }
-function fwdSubject(h) { return /^(fwd?|wg):/i.test(h.subject) ? h.subject : "WG: " + h.subject; }
+function fwdSubject(h) { return /^(fwd?|wg):/i.test(h.subject) ? h.subject : t("WG: ") + h.subject; }
 
 async function quickForward(contactId) {
   const ct = S.cfg.contacts.find((c) => c.id === contactId);
@@ -439,24 +443,25 @@ async function quickForward(contactId) {
   closeMenus();
   const acc = account(S.cur.id);
   const src = { accountId: S.cur.id, folder: S.cur.folder, uid: h.uid };
-  toast(`Leite weiter an ${ct.name || ct.email} …`);
+  toast(t("Leite weiter an {name} …", { name: ct.name || ct.email }));
   try {
     const b = await ensureBody();
     let body = forwardText(h, b);
     const sig = signatureOf(acc, acc.default_signature);
     if (sig && sig.text) body = `\n\n-- \n${sig.text}\n\n` + body;
-    await invoke("send_mail", { accountId: acc.id, to: ct.email, subject: fwdSubject(h), body, attachments: [], forward: src });
+    const r = await invoke("send_mail", { mail: { accountId: acc.id, to: ct.email, subject: fwdSubject(h), body, attachments: [], forward: src } });
     const n = (b.attachments || []).length;
-    toast(`Weitergeleitet an ${ct.name || ct.email}${n ? ` (inkl. ${n} Anhang${n > 1 ? "e" : ""})` : ""}`, "ok");
+    toast(t("Weitergeleitet an {name}", { name: ct.name || ct.email }) + (n ? t(n > 1 ? " (inkl. {n} Anhänge)" : " (inkl. {n} Anhang)", { n }) : ""), "ok");
+    if (r.warning) toast(r.warning, "err");
   } catch (e) {
-    toast(`Weiterleiten fehlgeschlagen: ${e}`, "err");
+    toast(t("Weiterleiten fehlgeschlagen: {e}", { e: tErr(e) }), "err");
   }
 }
 
 async function attachmentAction(index, open) {
   try {
     const p = await invoke("save_attachment", { accountId: S.cur.id, folder: S.cur.folder, uid: S.selUid, index, open });
-    if (!open) toast(`Gespeichert: ${p}`, "ok");
+    if (!open) toast(t("Gespeichert: {p}", { p }), "ok");
   } catch (e) { toast(String(e), "err"); }
 }
 
@@ -489,42 +494,42 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
   };
   const root = $("#modal-root");
   root.innerHTML = `<div class="overlay"><div class="modal">
-    <div class="modal-head"><h3>${draftId ? "Entwurf" : forward ? "Weiterleiten" : "Neue Nachricht"}</h3>
+    <div class="modal-head"><h3>${t(draftId ? "Entwurf" : forward ? "Weiterleiten" : "Neue Nachricht")}</h3>
       <span id="c-state" class="muted" style="font-size:12.5px"></span>
-      <button class="icon-btn" data-close title="Schließen (wird als Entwurf gespeichert)">${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+      <button class="icon-btn" data-close title="${t("Schließen (wird als Entwurf gespeichert)")}">${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Von</label><select id="c-from">${S.cfg.accounts.map((a) => `<option value="${a.id}" ${a.id === st.accId ? "selected" : ""}>${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`).join("")}</select></div>
-      <div class="field rel"><label>An</label><input id="c-to" class="rcpt" value="${esc(to)}" placeholder="Name oder Adresse – mehrere mit Komma" autocomplete="off" />
-        <button class="link-btn" id="c-ccbtn" title="CC / BCC hinzufügen">CC/BCC</button></div>
-      <div class="field rel" id="c-ccrow" hidden><label>CC</label><input id="c-cc" class="rcpt" placeholder="Kopie an" autocomplete="off" /></div>
-      <div class="field rel" id="c-bccrow" hidden><label>BCC</label><input id="c-bcc" class="rcpt" placeholder="Blindkopie an (für andere unsichtbar)" autocomplete="off" /></div>
+      <div class="field"><label>${t("Von")}</label><select id="c-from">${S.cfg.accounts.map((a) => `<option value="${a.id}" ${a.id === st.accId ? "selected" : ""}>${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`).join("")}</select></div>
+      <div class="field rel"><label>${t("An")}</label><input id="c-to" class="rcpt" value="${esc(to)}" placeholder="${t("Name oder Adresse – mehrere mit Komma")}" autocomplete="off" />
+        <button class="link-btn" id="c-ccbtn" title="${t("CC / BCC hinzufügen")}">CC/BCC</button></div>
+      <div class="field rel" id="c-ccrow" hidden><label>CC</label><input id="c-cc" class="rcpt" placeholder="${t("Kopie an")}" autocomplete="off" /></div>
+      <div class="field rel" id="c-bccrow" hidden><label>BCC</label><input id="c-bcc" class="rcpt" placeholder="${t("Blindkopie an (für andere unsichtbar)")}" autocomplete="off" /></div>
       <div id="c-sugg" class="menu sugg" hidden></div>
-      <div class="field"><label>Betreff</label><input id="c-subj" value="${esc(subject)}" /></div>
-      <textarea id="c-body" class="compose-text" placeholder="Nachricht schreiben …">${esc(quote)}</textarea>
+      <div class="field"><label>${t("Betreff")}</label><input id="c-subj" value="${esc(subject)}" /></div>
+      <textarea id="c-body" class="compose-text" placeholder="${t("Nachricht schreiben …")}">${esc(quote)}</textarea>
       <div id="c-sigprev" class="sig-preview"></div>
       <div id="c-atts" class="compose-atts"></div>
     </div>
     <div class="modal-foot">
-      <span class="muted" style="font-size:12.5px">Signatur</span><div id="c-sigs" class="segmented"></div>
+      <span class="muted" style="font-size:12.5px">${t("Signatur")}</span><div id="c-sigs" class="segmented"></div>
       <span class="grow"></span>
-      ${draftId ? `<button class="icon-btn" id="c-discard" title="Entwurf verwerfen">${svg(ICONS.trash)}</button>` : ""}
-      <button class="btn" id="c-draft" title="Als Entwurf speichern (Strg+S)">${svg(ICONS.drafts)} Entwurf</button>
-      <label class="btn" title="Datei anhängen">${svg('<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>')} Anhang<input type="file" id="c-file" multiple hidden /></label>
-      <button class="btn primary" id="c-send">${svg('<path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/>')} Senden</button>
+      ${draftId ? `<button class="icon-btn" id="c-discard" title="${t("Entwurf verwerfen")}">${svg(ICONS.trash)}</button>` : ""}
+      <button class="btn" id="c-draft" title="${t("Als Entwurf speichern (Strg+S)")}">${svg(ICONS.drafts)} ${t("Entwurf")}</button>
+      <label class="btn" title="${t("Datei anhängen")}">${svg('<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>')} ${t("Anhang")}<input type="file" id="c-file" multiple hidden /></label>
+      <button class="btn primary" id="c-send">${svg('<path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/>')} ${t("Senden")}</button>
     </div></div></div>`;
 
   const renderSigs = () => {
     const acc = account(st.accId);
     const sigs = acc?.signatures || [];
     $("#c-sigs").innerHTML = sigs.map((s, i) => `<button class="${i === st.sig ? "on" : ""}" data-sig="${i}">${esc(s.name)}</button>`).join("")
-      + `<button class="${st.sig === -1 ? "on" : ""}" data-sig="-1">Keine</button>`;
+      + `<button class="${st.sig === -1 ? "on" : ""}" data-sig="-1">${t("Keine")}</button>`;
     const s = signatureOf(acc, st.sig);
     $("#c-sigprev").textContent = s && s.text ? `-- \n${s.text}` : "";
     $("#c-sigprev").style.display = s && s.text ? "" : "none";
   };
   const renderAtts = () => {
     const chip = (name, size, mime, attr) => `<span class="chip">${fileIcon(mime, name)}<span>${esc(name)}</span><small>${fmtSize(size)}</small>
-      <button class="x" ${attr} title="Entfernen">${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></span>`;
+      <button class="x" ${attr} title="${t("Entfernen")}">${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></span>`;
     $("#c-atts").innerHTML = st.fwdAtts.map((a, i) => chip(a.name, a.size, a.mime, `data-rm-fwd="${i}"`)).join("")
       + st.files.map((f, i) => chip(f.name, f.size, f.mime, `data-rm-file="${i}"`)).join("");
   };
@@ -559,7 +564,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
     st.sugg = suggestions(inp.value.split(/[,;]/).pop()); st.si = 0;
     sg.hidden = !st.sugg.length;
     sg.style.top = inp.parentElement.offsetTop + inp.parentElement.offsetHeight + "px";
-    sg.innerHTML = st.sugg.map((s, i) => `<button class="menu-item ${i === st.si ? "hl" : ""}" data-pick="${i}"><span class="mav" style="background:${colorFor(s.email)}">${esc(initials(s.name || s.email))}</span><span><b>${esc(s.name || s.email)}${s.contact ? ' <i class="tag">Kontakt</i>' : ""}</b><small>${esc(s.email)}</small></span></button>`).join("");
+    sg.innerHTML = st.sugg.map((s, i) => `<button class="menu-item ${i === st.si ? "hl" : ""}" data-pick="${i}"><span class="mav" style="background:${colorFor(s.email)}">${esc(initials(s.name || s.email))}</span><span><b>${esc(s.name || s.email)}${s.contact ? ` <i class="tag">${t("Kontakt")}</i>` : ""}</b><small>${esc(s.email)}</small></span></button>`).join("");
   };
   const pick = (i) => {
     const s = st.sugg[i]; if (!s) return;
@@ -593,7 +598,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
     let body = f.text;
     if (s && s.text) {
       // Bei Weiterleitung/Antwort Signatur vor das Zitat setzen
-      const cut = body.search(/\n\n\n(Am .* schrieb|---------- Weitergeleitete)/);
+      const cut = body.search(/\n\n\n(Am .* schrieb|On .* wrote|---------- (Weitergeleitete|Forwarded))/);
       body = cut >= 0 ? `${body.slice(0, cut)}\n\n-- \n${s.text}${body.slice(cut)}` : `${body}\n\n-- \n${s.text}`;
     }
     return {
@@ -608,7 +613,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
   const saveDraft = async ({ quiet = false } = {}) => {
     if (st.busy) return false;
     st.busy = true;
-    setState("Speichere Entwurf …");
+    setState(t("Speichere Entwurf …"));
     try {
       // Entwurf ohne Signatur speichern – sie wird beim Senden wieder angehängt
       const m = mail();
@@ -619,13 +624,13 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
       if (st.forward) { st.forward = null; }
       saved = snapshot();
       forgetFolder(st.accId, (f) => f === r.folder);
-      setState(`Entwurf gespeichert ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+      setState(t("Entwurf gespeichert {time}", { time: new Date().toLocaleTimeString(LOCALE(), { hour: "2-digit", minute: "2-digit" }) }));
       if (!quiet) toast("Als Entwurf gespeichert", "ok");
       if (S.cur && S.cur.id === st.accId && S.cur.folder === r.folder) loadHeads(S.cur.id, S.cur.folder);
       return true;
     } catch (e) {
       setState("");
-      toast(`Entwurf konnte nicht gespeichert werden: ${e}`, "err");
+      toast(t("Entwurf konnte nicht gespeichert werden: {e}", { e: tErr(e) }), "err");
       return false;
     } finally { st.busy = false; }
   };
@@ -636,7 +641,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
     const empty = !f.to && !f.cc && !f.bcc && !f.subject.trim() && !f.text.trim() && !st.files.length;
     if (snapshot() === saved || (empty && !st.draftId)) return true;
     const ok = await saveDraft();
-    if (!ok) return confirm("Der Entwurf konnte nicht gespeichert werden. Trotzdem schließen? Der Text geht verloren.");
+    if (!ok) return confirm(t("Der Entwurf konnte nicht gespeichert werden. Trotzdem schließen? Der Text geht verloren."));
     return true;
   };
 
@@ -644,7 +649,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
     const m = mail();
     if (!m.to && !m.cc && !m.bcc) return toEl.focus();
     const btn = $("#c-send");
-    btn.disabled = true; btn.lastChild.textContent = " Sende …";
+    btn.disabled = true; btn.lastChild.textContent = " " + t("Sende …");
     try {
       const r = await invoke("send_mail", { mail: m });
       S.closeGuard = null;
@@ -654,7 +659,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
       if (m.draftId) forgetFolder(m.accountId, (f) => folderInfo(f, m.accountId).icon === "drafts");
       if (S.cur) loadHeads(S.cur.id, S.cur.folder);
     } catch (e) {
-      btn.disabled = false; btn.lastChild.textContent = " Senden";
+      btn.disabled = false; btn.lastChild.textContent = " " + t("Senden");
       toast(String(e), "err");
     }
   };
@@ -662,7 +667,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
   $("#c-draft").onclick = () => saveDraft();
   const disc = $("#c-discard");
   if (disc) disc.onclick = async () => {
-    if (!confirm("Entwurf verwerfen?")) return;
+    if (!confirm(t("Entwurf verwerfen?"))) return;
     try {
       await invoke("discard_draft", { accountId: st.accId, draftId: st.draftId });
       forgetFolder(st.accId, (f) => folderInfo(f, st.accId).icon === "drafts");
@@ -693,7 +698,7 @@ async function replyOrForward(fwd) {
   } else {
     const quoted = (b.text || "").split("\n").map((l) => "> " + l).join("\n");
     const subj = /^(re|aw):/i.test(h.subject) ? h.subject : "Re: " + h.subject;
-    openCompose({ to: b.reply_to || h.from_addr, subject: subj, quote: `\n\n\nAm ${fmtLong(h.ts)} schrieb ${h.from} <${h.from_addr}>:\n${quoted}` });
+    openCompose({ to: b.reply_to || h.from_addr, subject: subj, quote: `\n\n\n${t("Am {date} schrieb {name}:", { date: fmtLong(h.ts), name: `${h.from} <${h.from_addr}>` })}\n${quoted}` });
   }
 }
 
@@ -711,7 +716,7 @@ async function editDraft() {
       accId: S.cur.id, to: b.to, cc: b.cc, bcc: b.bcc, subject: h.subject === "(kein Betreff)" ? "" : h.subject,
       quote: (b.text || "").replace(/\s+$/, ""), files, draftId: b.message_id || null,
     });
-  } catch (e) { toast(`Entwurf konnte nicht geöffnet werden: ${e}`, "err"); }
+  } catch (e) { toast(t("Entwurf konnte nicht geöffnet werden: {e}", { e: tErr(e) }), "err"); }
 }
 
 // ---------------------------------------------------------------- Volltextsuche
@@ -739,7 +744,7 @@ function snippetHtml(s) {
 function renderResults(el) {
   const hits = S.results;
   if (!hits.length) {
-    el.innerHTML = `<div class="empty-hint" style="text-align:center;padding-top:40px">Keine Treffer.<br><small>Gesucht wird in allen offline gespeicherten Mails.</small></div>`;
+    el.innerHTML = `<div class="empty-hint" style="text-align:center;padding-top:40px">${t("Keine Treffer.")}<br><small>${t("Gesucht wird in allen offline gespeicherten Mails.")}</small></div>`;
     return;
   }
   el.innerHTML = hits.map((m, i) => {
@@ -750,7 +755,7 @@ function renderResults(el) {
       <div class="av" style="background:${colorFor(m.from_addr || m.from)}">${esc(initials(m.from))}</div>
       <div class="from">${esc(m.from || m.from_addr)}</div>
       <div class="time">${fmtTime(m.ts)}</div>
-      <div class="subj">${esc(m.subject)}</div>
+      <div class="subj">${esc(subjOf(m))}</div>
       ${m.snippet ? `<div class="snip">${snippetHtml(m.snippet)}</div>` : ""}
       <div class="where">${acc ? `<span class="dot" style="background:${accColor(acc)}"></span>${esc(acc.name || acc.email)} · ` : ""}${esc(fi.label)}</div>
     </div>`;
@@ -775,11 +780,11 @@ function renderSync() {
   if (!el) return;
   const st = S.sync;
   if (st.running) {
-    el.innerHTML = `<span class="spinner"></span><span>Offline-Sync: ${esc(st.folder || "…")}${st.total ? ` · ${st.done}/${st.total}` : ""}</span>`;
+    el.innerHTML = `<span class="spinner"></span><span>${t("Offline-Sync")}: ${esc(st.folder || "…")}${st.total ? ` · ${st.done}/${st.total}` : ""}</span>`;
   } else if (S.offline) {
-    el.innerHTML = `<span class="pill-off">Offline</span><span>Zeige gespeicherte Mails</span>`;
+    el.innerHTML = `<span class="pill-off">Offline</span><span>${t("Zeige gespeicherte Mails")}</span>`;
   } else if (st.stats) {
-    el.innerHTML = `${svg('<path d="M20 6 9 17l-5-5"/>')}<span>${st.stats.offline.toLocaleString("de-DE")} Mails offline verfügbar</span>`;
+    el.innerHTML = `${svg('<path d="M20 6 9 17l-5-5"/>')}<span>${t("{n} Mails offline verfügbar", { n: st.stats.offline.toLocaleString(LOCALE()) })}</span>`;
   } else el.innerHTML = "";
 }
 
@@ -800,6 +805,85 @@ function initSyncEvents() {
   ev.listen("sync-error", (e) => console.warn("Sync:", e.payload));
 }
 
+// ---------------------------------------------------------------- Allgemein & Updates
+function generalSettings() {
+  const pref = S.cfg.language || "";
+  return `<div class="set-sec">
+      <h4>${t("Sprache")}</h4>
+      <select id="g-lang" class="set-select">
+        <option value="" ${pref === "" ? "selected" : ""}>${t("Automatisch (Systemsprache)")}</option>
+        ${Object.entries(LANGUAGES).map(([k, v]) => `<option value="${k}" ${pref === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="set-sec">
+      <h4>${t("Updates")}</h4>
+      <div class="muted" style="margin-bottom:10px">${t("Installierte Version")}: <b>v${esc(S.version)}</b></div>
+      <label class="check"><input type="checkbox" id="g-autoupd" ${S.cfg.skip_update_check ? "" : "checked"}/> <span>${t("Beim Start automatisch nach Updates suchen")}</span></label>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <button class="btn" data-act="check-update">${svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>')} ${t("Jetzt nach Updates suchen")}</button>
+        <span id="upd-result" class="muted"></span>
+      </div>
+    </div>`;
+}
+
+async function checkUpdate(manual) {
+  const out = $("#upd-result");
+  if (manual && out) out.textContent = t("Suche nach Updates …");
+  try {
+    const info = await invoke("check_update");
+    S.update = info.available ? info : null;
+    renderSidebar();
+    if (info.available) {
+      if (manual) showUpdate(); else toast(t("Update {v} verfügbar", { v: info.latest }), "ok");
+    } else if (manual && out) out.textContent = t("Du nutzt die neueste Version.");
+  } catch (e) {
+    if (manual) { if (out) out.textContent = ""; toast(t("Update-Prüfung fehlgeschlagen: {e}", { e: tErr(e) }), "err"); }
+  }
+}
+
+function showUpdate() {
+  const u = S.update;
+  if (!u) return;
+  $("#modal-root").innerHTML = `<div class="overlay"><div class="modal">
+    <div class="modal-head"><h3>${t("Update verfügbar")}</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+    <div class="modal-body">
+      <p style="margin-top:0">${t("Version {v} ist verfügbar (installiert: {c}).", { v: `<b>v${esc(u.latest)}</b>`, c: `v${esc(u.current)}` })}</p>
+      ${u.notes ? `<div class="release-notes">${esc(u.notes)}</div>` : ""}
+      <p class="hint">${t("MailLine startet nach dem Update automatisch neu.")}</p>
+      <div id="upd-progress" class="upd-progress" hidden><div class="bar"><span></span></div><small></small></div>
+    </div>
+    <div class="modal-foot">
+      <button class="link-btn" data-act="open-release">${t("Auf GitHub ansehen")}</button>
+      <span class="grow"></span>
+      <button class="btn" data-close>${t("Später")}</button>
+      <button class="btn primary" id="upd-install" data-act="install-update">${svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>')} ${t("Jetzt installieren")}</button>
+    </div></div></div>`;
+}
+
+let updUnlisten = null;
+async function installUpdate() {
+  const btn = $("#upd-install"), prog = $("#upd-progress");
+  if (!btn) return;
+  btn.disabled = true;
+  prog.hidden = false;
+  const bar = prog.querySelector(".bar span"), label = prog.querySelector("small");
+  label.textContent = t("Lade herunter … {p} %", { p: 0 });
+  updUnlisten?.();
+  updUnlisten = await window.__TAURI__.event.listen("update-progress", (e) => {
+    const [done, total] = e.payload;
+    const pct = total ? Math.floor((done / total) * 100) : 0;
+    bar.style.width = pct + "%";
+    label.textContent = pct >= 100 ? t("Installiere …") : t("Lade herunter … {p} %", { p: pct });
+  });
+  try {
+    await invoke("install_update"); // beendet die App und startet die neue Version
+  } catch (e) {
+    btn.disabled = false;
+    prog.hidden = true;
+    toast(t("Update fehlgeschlagen: {e}", { e: tErr(e) }), "err");
+  }
+}
+
 // ---------------------------------------------------------------- Kontakte
 let contactsState = { q: "", edit: null, prefill: null };
 
@@ -814,31 +898,31 @@ function renderContacts() {
   if (st.edit !== null) {
     const c = st.edit === "new" ? { name: "", email: "", company: "", phone: "", note: "", quick: false, ...(st.prefill || {}) } : S.cfg.contacts.find((x) => x.id === st.edit);
     body = `<div class="form-grid">
-      <label class="inp">Name<input id="k-name" value="${esc(c.name)}" placeholder="Buchhaltung" /></label>
-      <label class="inp">E-Mail-Adresse<input id="k-email" value="${esc(c.email)}" placeholder="rechnungen@steuerbuero.de" /></label>
-      <label class="inp">Firma<input id="k-company" value="${esc(c.company)}" /></label>
-      <label class="inp">Telefon<input id="k-phone" value="${esc(c.phone)}" /></label>
-      <label class="inp full">Notiz<textarea id="k-note">${esc(c.note)}</textarea></label>
-      <label class="check full"><input type="checkbox" id="k-quick" ${c.quick ? "checked" : ""}/> <span><b>Schnell-Weiterleiten</b><br><small class="muted">Erscheint oben im Menü „Weiterleiten an“ – ein Klick leitet die Mail inkl. aller Anhänge an diesen Kontakt weiter.</small></span></label>
+      <label class="inp">${t("Name")}<input id="k-name" value="${esc(c.name)}" placeholder="${t("Buchhaltung")}" /></label>
+      <label class="inp">${t("E-Mail-Adresse")}<input id="k-email" value="${esc(c.email)}" placeholder="rechnungen@steuerbuero.de" /></label>
+      <label class="inp">${t("Firma")}<input id="k-company" value="${esc(c.company)}" /></label>
+      <label class="inp">${t("Telefon")}<input id="k-phone" value="${esc(c.phone)}" /></label>
+      <label class="inp full">${t("Notiz")}<textarea id="k-note">${esc(c.note)}</textarea></label>
+      <label class="check full"><input type="checkbox" id="k-quick" ${c.quick ? "checked" : ""}/> <span><b>${t("Schnell-Weiterleiten")}</b><br><small class="muted">${t("Erscheint oben im Menü „Weiterleiten an“ – ein Klick leitet die Mail inkl. aller Anhänge an diesen Kontakt weiter.")}</small></span></label>
     </div>`;
-    foot = `${st.edit !== "new" ? `<button class="btn danger" data-act="del-contact">Löschen</button>` : ""}<span class="grow"></span>
-      <button class="btn" data-act="contacts-back">Abbrechen</button><button class="btn primary" data-act="save-contact">Speichern</button>`;
+    foot = `${st.edit !== "new" ? `<button class="btn danger" data-act="del-contact">${t("Löschen")}</button>` : ""}<span class="grow"></span>
+      <button class="btn" data-act="contacts-back">${t("Abbrechen")}</button><button class="btn primary" data-act="save-contact">${t("Speichern")}</button>`;
   } else {
     const q = st.q.toLowerCase();
     const list = S.cfg.contacts
       .filter((c) => !q || [c.name, c.email, c.company].some((v) => (v || "").toLowerCase().includes(q)))
       .sort((a, b) => (b.quick - a.quick) || (a.name || a.email).localeCompare(b.name || b.email));
-    body = `<div class="search" style="margin:12px 0 6px">${svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="k-search" value="${esc(st.q)}" placeholder="Kontakte durchsuchen" autocomplete="off" /></div>
+    body = `<div class="search" style="margin:12px 0 6px">${svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<input id="k-search" value="${esc(st.q)}" placeholder="${t("Kontakte durchsuchen")}" autocomplete="off" /></div>
       ${list.length ? list.map((c) => `<div class="acc-row contact" data-contact="${c.id}">
           <div class="av round" style="background:${colorFor(c.email)}">${esc(initials(c.name || c.email))}</div>
-          <div class="meta"><b>${esc(c.name || c.email)} ${c.quick ? '<i class="tag">⚡ Schnell</i>' : ""}</b><span>${esc(c.email)}${c.company ? " · " + esc(c.company) : ""}</span></div>
-          <button class="btn" data-mailto="${c.id}" title="E-Mail schreiben">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')}</button>
-          <button class="btn" data-edit-contact="${c.id}">Bearbeiten</button></div>`).join("")
-        : `<div class="empty-hint">${S.cfg.contacts.length ? "Keine Treffer." : "Noch keine Kontakte. Lege z. B. deine Buchhaltung an und aktiviere „Schnell-Weiterleiten“ – dann gehen Rechnungen mit zwei Klicks raus."}</div>`}`;
-    foot = `<span class="grow"></span><button class="btn primary" data-act="new-contact">${svg('<path d="M12 5v14M5 12h14"/>')} Kontakt hinzufügen</button>`;
+          <div class="meta"><b>${esc(c.name || c.email)} ${c.quick ? `<i class="tag">${t("⚡ Schnell")}</i>` : ""}</b><span>${esc(c.email)}${c.company ? " · " + esc(c.company) : ""}</span></div>
+          <button class="btn" data-mailto="${c.id}" title="${t("E-Mail schreiben")}">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')}</button>
+          <button class="btn" data-edit-contact="${c.id}">${t("Bearbeiten")}</button></div>`).join("")
+        : `<div class="empty-hint">${t(S.cfg.contacts.length ? "Keine Treffer." : "Noch keine Kontakte. Lege z. B. deine Buchhaltung an und aktiviere „Schnell-Weiterleiten“ – dann gehen Rechnungen mit zwei Klicks raus.")}</div>`}`;
+    foot = `<span class="grow"></span><button class="btn primary" data-act="new-contact">${svg('<path d="M12 5v14M5 12h14"/>')} ${t("Kontakt hinzufügen")}</button>`;
   }
   $("#modal-root").innerHTML = `<div class="overlay"><div class="modal wide">
-    <div class="modal-head"><h3>Kontakte</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+    <div class="modal-head"><h3>${t("Kontakte")}</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
     <div class="modal-body">${body}</div>
     <div class="modal-foot">${foot}</div></div></div>`;
   const ks = $("#k-search");
@@ -863,7 +947,7 @@ async function saveContact() {
 
 async function deleteContact() {
   const c = S.cfg.contacts.find((x) => x.id === contactsState.edit);
-  if (!c || !confirm(`Kontakt „${c.name || c.email}“ löschen?`)) return;
+  if (!c || !confirm(t("Kontakt „{name}“ löschen?", { name: c.name || c.email }))) return;
   S.cfg.contacts = S.cfg.contacts.filter((x) => x.id !== c.id);
   await saveCfg();
   contactsState.edit = null;
@@ -945,23 +1029,23 @@ function openSettings(tab = "accounts", editId = null) {
 function accountForm(a) {
   const v = (x) => esc(x ?? "");
   return `<div class="form-grid" id="acc-form">
-    <label class="inp">Anzeigename<input id="f-name" value="${v(a?.name)}" placeholder="Max Mustermann" /></label>
-    <label class="inp">E-Mail-Adresse<input id="f-email" value="${v(a?.email)}" placeholder="max@firma.de" /></label>
-    <label class="inp">Benutzername<input id="f-user" value="${v(a?.username)}" placeholder="meist die E-Mail-Adresse" /></label>
-    <label class="inp">Passwort<input id="f-pw" type="password" placeholder="${a ? "unverändert lassen" : "App-Passwort / Passwort"}" /></label>
-    <label class="inp">IMAP-Server<div class="row2"><input id="f-imap" value="${v(a?.imap_host)}" placeholder="imap.firma.de" /><input id="f-imapport" value="${v(a?.imap_port ?? 993)}" /></div></label>
-    <label class="inp">SMTP-Server<div class="row2"><input id="f-smtp" value="${v(a?.smtp_host)}" placeholder="smtp.firma.de" /><input id="f-smtpport" value="${v(a?.smtp_port ?? 587)}" /></div></label>
-    <div class="full hint">IMAP mit SSL/TLS (Port 993). SMTP: Port 465 = SSL/TLS, sonst STARTTLS. Das Passwort wird in der Windows-Anmeldeinformationsverwaltung gespeichert.</div>
-    <label class="check full"><input type="checkbox" id="f-savesent" ${a ? (a.save_sent ? "checked" : "") : "checked"}/> <span><b>Gesendete Mails im Gesendet-Ordner speichern</b><br>
-      <small class="muted">Legt nach dem Senden eine Kopie per IMAP ab. Bei Gmail und Outlook/Microsoft 365 ausschalten – die speichern selbst, sonst landet jede Mail doppelt.</small></span></label>
-    <label class="inp">Gesendet-Ordner${folderSelect("f-sentfolder", a, a?.sent_folder)}</label>
-    <label class="inp">Entwürfe-Ordner${folderSelect("f-draftsfolder", a, a?.drafts_folder)}</label>
+    <label class="inp">${t("Anzeigename")}<input id="f-name" value="${v(a?.name)}" placeholder="${t("Max Mustermann")}" /></label>
+    <label class="inp">${t("E-Mail-Adresse")}<input id="f-email" value="${v(a?.email)}" placeholder="${t("max@firma.de")}" /></label>
+    <label class="inp">${t("Benutzername")}<input id="f-user" value="${v(a?.username)}" placeholder="${t("meist die E-Mail-Adresse")}" /></label>
+    <label class="inp">${t("Passwort")}<input id="f-pw" type="password" placeholder="${t(a ? "unverändert lassen" : "App-Passwort / Passwort")}" /></label>
+    <label class="inp">IMAP-Server<div class="row2"><input id="f-imap" value="${v(a?.imap_host)}" placeholder="${t("imap.firma.de")}" /><input id="f-imapport" value="${v(a?.imap_port ?? 993)}" /></div></label>
+    <label class="inp">SMTP-Server<div class="row2"><input id="f-smtp" value="${v(a?.smtp_host)}" placeholder="${t("smtp.firma.de")}" /><input id="f-smtpport" value="${v(a?.smtp_port ?? 587)}" /></div></label>
+    <div class="full hint">${t("IMAP mit SSL/TLS (Port 993). SMTP: Port 465 = SSL/TLS, sonst STARTTLS. Das Passwort wird in der Windows-Anmeldeinformationsverwaltung gespeichert.")}</div>
+    <label class="check full"><input type="checkbox" id="f-savesent" ${a ? (a.save_sent ? "checked" : "") : "checked"}/> <span><b>${t("Gesendete Mails im Gesendet-Ordner speichern")}</b><br>
+      <small class="muted">${t("Legt nach dem Senden eine Kopie per IMAP ab. Bei Gmail und Outlook/Microsoft 365 ausschalten – die speichern selbst, sonst landet jede Mail doppelt.")}</small></span></label>
+    <label class="inp">${t("Gesendet-Ordner")}${folderSelect("f-sentfolder", a, a?.sent_folder)}</label>
+    <label class="inp">${t("Entwürfe-Ordner")}${folderSelect("f-draftsfolder", a, a?.drafts_folder)}</label>
   </div>`;
 }
 
 function folderSelect(id, a, value) {
   const list = (a && S.folders[a.id]) || [];
-  return `<select id="${id}"><option value="">Automatisch erkennen</option>${list.map((f) => `<option value="${esc(f)}" ${f === value ? "selected" : ""}>${esc("\u00a0".repeat(folderInfo(f, a.id).depth * 3) + folderInfo(f, a.id).label)}</option>`).join("")}</select>`;
+  return `<select id="${id}"><option value="">${t("Automatisch erkennen")}</option>${list.map((f) => `<option value="${esc(f)}" ${f === value ? "selected" : ""}>${esc("\u00a0".repeat(folderInfo(f, a.id).depth * 3) + folderInfo(f, a.id).label)}</option>`).join("")}</select>`;
 }
 
 function renderSettings() {
@@ -971,34 +1055,37 @@ function renderSettings() {
     if (st.edit !== null) {
       const a = st.edit === "new" ? null : account(st.edit);
       body = accountForm(a);
-      foot = `${a ? `<button class="btn danger" data-act="del-account">Konto entfernen</button>` : ""}<span class="grow"></span>
-        <button class="btn" data-act="back">Abbrechen</button><button class="btn primary" data-act="save-account">${a ? "Speichern" : "Konto hinzufügen"}</button>`;
+      foot = `${a ? `<button class="btn danger" data-act="del-account">${t("Konto entfernen")}</button>` : ""}<span class="grow"></span>
+        <button class="btn" data-act="back">${t("Abbrechen")}</button><button class="btn primary" data-act="save-account">${t(a ? "Speichern" : "Konto hinzufügen")}</button>`;
     } else {
       body = (S.cfg.accounts.length ? S.cfg.accounts.map((a) => `<div class="acc-row">
           <div class="av" style="background:${accColor(a)}">${esc(initials(a.name || a.email))}</div>
           <div class="meta"><b>${esc(a.name)}</b><span>${esc(a.email)} · ${esc(a.imap_host)}</span></div>
-          <button class="btn" data-edit="${a.id}">Bearbeiten</button></div>`).join("")
-        : `<div class="empty-hint">Noch keine Konten.</div>`);
-      foot = `<span class="grow"></span><button class="btn primary" data-act="new-account">${svg('<path d="M12 5v14M5 12h14"/>')} Konto hinzufügen</button>`;
+          <button class="btn" data-edit="${a.id}">${t("Bearbeiten")}</button></div>`).join("")
+        : `<div class="empty-hint">${t("Noch keine Konten.")}</div>`);
+      foot = `<span class="grow"></span><button class="btn primary" data-act="new-account">${svg('<path d="M12 5v14M5 12h14"/>')} ${t("Konto hinzufügen")}</button>`;
     }
-  } else {
+  } else if (st.tab === "sigs") {
     if (!account(st.sigAcc)) st.sigAcc = S.cfg.accounts[0]?.id;
     const a = account(st.sigAcc);
-    body = !a ? `<div class="empty-hint">Lege zuerst ein Konto an.</div>` : `
-      <label class="inp" style="margin-top:14px">Konto<select id="sig-acc">${S.cfg.accounts.map((x) => `<option value="${x.id}" ${x.id === a.id ? "selected" : ""}>${esc(x.name)} – ${esc(x.email)}</option>`).join("")}</select></label>
+    body = !a ? `<div class="empty-hint">${t("Lege zuerst ein Konto an.")}</div>` : `
+      <label class="inp" style="margin-top:14px">${t("Konto")}<select id="sig-acc">${S.cfg.accounts.map((x) => `<option value="${x.id}" ${x.id === a.id ? "selected" : ""}>${esc(x.name)} – ${esc(x.email)}</option>`).join("")}</select></label>
       ${a.signatures.map((s, i) => `<div class="sig-card">
         <div class="top"><input data-sig-name="${i}" value="${esc(s.name)}" />
-          <label class="radio"><input type="radio" name="defsig" data-sig-def="${i}" ${a.default_signature === i ? "checked" : ""}/> Standard</label>
-          <button class="icon-btn" data-sig-del="${i}" title="Löschen">${svg(ICONS.trash)}</button></div>
-        <textarea data-sig-text="${i}" placeholder="Signaturtext …">${esc(s.text)}</textarea></div>`).join("")}
-      <button class="btn" style="margin-top:12px" data-act="add-sig">${svg('<path d="M12 5v14M5 12h14"/>')} Signatur hinzufügen</button>
-      <div class="hint">Lege z. B. „Deutsch“ und „English“ an – beim Verfassen wechselst du mit einem Klick.</div>`;
-    foot = `<span class="grow"></span><button class="btn primary" data-close>Fertig</button>`;
+          <label class="radio"><input type="radio" name="defsig" data-sig-def="${i}" ${a.default_signature === i ? "checked" : ""}/> ${t("Standard")}</label>
+          <button class="icon-btn" data-sig-del="${i}" title="${t("Löschen")}">${svg(ICONS.trash)}</button></div>
+        <textarea data-sig-text="${i}" placeholder="${t("Signaturtext …")}">${esc(s.text)}</textarea></div>`).join("")}
+      <button class="btn" style="margin-top:12px" data-act="add-sig">${svg('<path d="M12 5v14M5 12h14"/>')} ${t("Signatur hinzufügen")}</button>
+      <div class="hint">${t("Lege z. B. „Deutsch“ und „English“ an – beim Verfassen wechselst du mit einem Klick.")}</div>`;
+    foot = `<span class="grow"></span><button class="btn primary" data-close>${t("Fertig")}</button>`;
+  } else {
+    body = generalSettings();
+    foot = `<span class="grow"></span><button class="btn primary" data-close>${t("Fertig")}</button>`;
   }
 
   $("#modal-root").innerHTML = `<div class="overlay"><div class="modal wide">
-    <div class="modal-head"><h3>Einstellungen</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
-    <div class="tabs"><button class="${st.tab === "accounts" ? "on" : ""}" data-tab="accounts">Konten</button><button class="${st.tab === "sigs" ? "on" : ""}" data-tab="sigs">Signaturen</button></div>
+    <div class="modal-head"><h3>${t("Einstellungen")}</h3><button class="icon-btn" data-close>${svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+    <div class="tabs"><button class="${st.tab === "accounts" ? "on" : ""}" data-tab="accounts">${t("Konten")}</button><button class="${st.tab === "sigs" ? "on" : ""}" data-tab="sigs">${t("Signaturen")}</button><button class="${st.tab === "general" ? "on" : ""}" data-tab="general">${t("Allgemein")}</button></div>
     <div class="modal-body">${body}</div>
     <div class="modal-foot">${foot}</div></div></div>`;
 
@@ -1013,6 +1100,10 @@ function renderSettings() {
   });
   const sa = $("#sig-acc");
   if (sa) sa.onchange = () => { settingsState.sigAcc = Number(sa.value); renderSettings(); };
+  const gl = $("#g-lang");
+  if (gl) gl.onchange = async () => { S.cfg.language = gl.value; await saveCfg(); location.reload(); };
+  const gu = $("#g-autoupd");
+  if (gu) gu.onchange = () => { S.cfg.skip_update_check = !gu.checked; saveCfg(); };
 }
 
 async function saveAccount() {
@@ -1020,7 +1111,7 @@ async function saveAccount() {
   const isNew = st.edit === "new";
   const val = (id) => $(id).value.trim();
   const email = val("#f-email"), pw = $("#f-pw").value, imap = val("#f-imap");
-  if (!email || !imap || (isNew && !pw)) return toast("E-Mail, IMAP-Server und Passwort sind erforderlich", "err");
+  if (!email || !imap || (isNew && !pw)) return toast(t("E-Mail, IMAP-Server und Passwort sind erforderlich"), "err");
   const name = val("#f-name") || email;
   const a = isNew
     ? { id: Date.now(), signatures: [{ name: "Deutsch", text: `Viele Grüße\n${name}` }, { name: "English", text: `Best regards\n${name}` }], default_signature: 0 }
@@ -1051,7 +1142,7 @@ async function saveAccount() {
 
 async function deleteAccount() {
   const a = account(settingsState.edit);
-  if (!a || !confirm(`Konto „${a.email}“ aus MailLine entfernen?`)) return;
+  if (!a || !confirm(t("Konto „{name}“ aus MailLine entfernen?", { name: a.email }))) return;
   S.cfg.accounts = S.cfg.accounts.filter((x) => x.id !== a.id);
   S.cfg.focus_folders = S.cfg.focus_folders.filter((k) => !k.startsWith(a.id + "|"));
   await invoke("delete_password", { id: a.id });
@@ -1122,6 +1213,10 @@ document.addEventListener("click", (e) => {
     case "edit-focus": S.editFocus = !S.editFocus; return renderSidebar();
     case "images": S.showImages = true; return renderReader();
     case "edit-draft": return editDraft();
+    case "show-update": return showUpdate();
+    case "check-update": return checkUpdate(true);
+    case "install-update": return installUpdate();
+    case "open-release": return S.update && invoke("open_url", { url: S.update.page }).catch((err) => toast(String(err), "err"));
     case "fwd-menu": { const m = $("#fwd-menu"); const was = m.hidden; closeMenus(); m.hidden = !was; return; }
     case "contacts": closeMenus(); return openContacts();
     case "new-contact": contactsState.edit = "new"; contactsState.prefill = null; return renderContacts();
@@ -1131,7 +1226,7 @@ document.addEventListener("click", (e) => {
     case "save-sender": { const h = curHead(); return openContacts({ name: h.from !== h.from_addr ? h.from : "", email: h.from_addr }); }
     case "add-sig": {
       const a = account(settingsState.sigAcc);
-      a.signatures.push({ name: `Signatur ${a.signatures.length + 1}`, text: "" });
+      a.signatures.push({ name: window.t("Signatur {n}", { n: a.signatures.length + 1 }), text: "" });
       saveCfg(); return renderSettings();
     }
   }
@@ -1241,7 +1336,7 @@ async function deleteMessages(uids, permanent = false) {
   if (!S.cur || !uids.length) return;
   const { id, folder } = S.cur;
   const perm = permanent || isTrashFolder(id, folder);
-  if (perm && !confirm(uids.length > 1 ? `${uids.length} Nachrichten endgültig löschen?` : "Nachricht endgültig löschen? Das kann nicht rückgängig gemacht werden.")) return;
+  if (perm && !confirm(uids.length > 1 ? t("{n} Nachrichten endgültig löschen?", { n: uids.length }) : t("Nachricht endgültig löschen? Das kann nicht rückgängig gemacht werden."))) return;
   const undo = removeLocally(uids);
   try {
     const wasPermanent = await invoke("delete_messages", { accountId: id, folder, uids, permanent: perm });
@@ -1249,7 +1344,7 @@ async function deleteMessages(uids, permanent = false) {
     forgetFolder(id, (f) => isTrashFolder(id, f)); // Papierkorb beim nächsten Öffnen neu laden
   } catch (e) {
     undo();
-    toast(`Löschen fehlgeschlagen: ${e}`, "err");
+    toast(t("Löschen fehlgeschlagen: {e}", { e: tErr(e) }), "err");
   }
 }
 
@@ -1259,11 +1354,11 @@ async function moveMessages(uids, target) {
   const undo = removeLocally(uids);
   try {
     await invoke("move_messages", { accountId: id, folder, uids, target });
-    toast(`Verschoben nach „${folderInfo(target, id).label}“`, "ok");
+    toast(t("Verschoben nach „{f}“", { f: folderInfo(target, id).label }), "ok");
     forgetFolder(id, (f) => f === target);
   } catch (e) {
     undo();
-    toast(`Verschieben fehlgeschlagen: ${e}`, "err");
+    toast(t("Verschieben fehlgeschlagen: {e}", { e: tErr(e) }), "err");
   }
 }
 
@@ -1306,12 +1401,12 @@ function ctxHtml(items) {
   return items.map((it) => {
     if (it === "-") return '<div class="menu-sep"></div>';
     if (it.label && it.sub) {
-      return `<div class="ctx-item has-sub">${svg(it.icon || "")}<span class="l">${esc(it.label)}</span>${svg('<path d="m9 6 6 6-6 6"/>')}
-        <div class="ctx-menu sub">${it.sub.length ? ctxHtml(it.sub) : '<div class="menu-empty">Keine Einträge</div>'}</div></div>`;
+      return `<div class="ctx-item has-sub">${svg(it.icon || "")}<span class="l">${esc(t(it.label))}</span>${svg('<path d="m9 6 6 6-6 6"/>')}
+        <div class="ctx-menu sub">${it.sub.length ? ctxHtml(it.sub) : `<div class="menu-empty">${t("Keine Einträge")}</div>`}</div></div>`;
     }
     if (it.header) return `<div class="menu-label">${esc(it.header)}</div>`;
     const i = ctxActions.push(it.run) - 1;
-    return `<button class="ctx-item ${it.danger ? "danger" : ""}" data-ctx="${i}" ${it.disabled ? "disabled" : ""}>${svg(it.icon || "")}<span class="l">${esc(it.label)}</span>${it.kbd ? `<span class="k">${esc(it.kbd)}</span>` : ""}</button>`;
+    return `<button class="ctx-item ${it.danger ? "danger" : ""}" data-ctx="${i}" ${it.disabled ? "disabled" : ""}>${svg(it.icon || "")}<span class="l">${esc(t(it.label))}</span>${it.kbd ? `<span class="k">${esc(t(it.kbd))}</span>` : ""}</button>`;
   }).join("");
 }
 
@@ -1467,10 +1562,20 @@ setInterval(() => {
 }, 180000);
 
 // ---------------------------------------------------------------- Start
+function applyStaticTexts() {
+  document.documentElement.lang = LANG;
+  $("#search").placeholder = t("Suchen  (Strg+K)");
+  $("#refresh").title = t("Aktualisieren (F5)");
+  document.querySelectorAll(".resizer").forEach((r) => (r.title = t("Ziehen zum Ändern · Doppelklick = Standard")));
+}
+
 (async function init() {
   initResizers();
   initSyncEvents();
   S.cfg = await invoke("get_config");
+  LANG = detectLang(S.cfg.language);
+  applyStaticTexts();
+  S.version = await invoke("app_version").catch(() => "");
   S.cfg.contacts ||= [];
   S.cfg.accounts.forEach((a) => { a.signatures ||= []; });
   const first = S.cfg.accounts[0];
@@ -1486,5 +1591,6 @@ setInterval(() => {
   }
   invoke("cache_stats").then((st) => { S.sync.stats = st; renderSync(); }).catch(() => {});
   setTimeout(startSync, 4000);
+  if (!S.cfg.skip_update_check) setTimeout(() => checkUpdate(false), 8000);
   setInterval(startSync, 10 * 60 * 1000);
 })();

@@ -3,6 +3,7 @@
 mod backend;
 mod cache;
 mod config;
+mod update;
 
 use backend::{BodyOut, Draft, FoldersOut, HeadersOut, OutAttachment, Store};
 use cache::{Cache, SearchHit};
@@ -10,7 +11,7 @@ use config::{Account, Config};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, State};
+use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, Manager, State};
 
 struct AppState {
     cfg: Mutex<Config>,
@@ -293,6 +294,48 @@ fn start_sync(app: AppHandle, state: State<AppState>) -> bool {
     true
 }
 
+// ------------------------------------------------------------------ Updates
+
+#[tauri::command]
+fn app_version() -> &'static str {
+    update::VERSION
+}
+
+/// Release-Seite im Standardbrowser öffnen (nur GitHub-Links dieses Projekts).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/bluecraank/MailLine/") {
+        return Err("Link nicht erlaubt".into());
+    }
+    std::process::Command::new("explorer").arg(&url).spawn().map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_update() -> Result<update::UpdateInfo, String> {
+    blocking(|| update::check().map_err(err)).await
+}
+
+/// Lädt das Update, ersetzt die .exe und startet MailLine neu.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let app2 = app.clone();
+    blocking(move || {
+        let info = update::check().map_err(err)?;
+        if !info.available {
+            return Err("Kein Update verfügbar".into());
+        }
+        update::install(&info, &|done, total| {
+            let _ = app2.emit("update-progress", (done, total));
+        })
+        .map_err(err)?;
+        update::restart().map_err(err)
+    })
+    .await?;
+    app.exit(0);
+    Ok(())
+}
+
 #[tauri::command]
 fn cache_stats(state: State<AppState>) -> SyncDone {
     let (messages, offline) = state.store.cache.stats();
@@ -300,11 +343,21 @@ fn cache_stats(state: State<AppState>) -> SyncDone {
 }
 
 fn main() {
+    update::wait_for_previous();
+    update::cleanup();
     let cache = Cache::open().unwrap_or_else(|e| {
         eprintln!("Offline-Cache nicht verfügbar ({e:#}), nutze Speicher-Cache");
         Cache::in_memory()
     });
     tauri::Builder::default()
+        // Zweiter Start: vorhandenes Fenster nach vorn holen statt abzustürzen
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.webview_windows().values().next() {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .manage(AppState {
             cfg: Mutex::new(Config::load()),
             store: Arc::new(Store::new(cache)),
@@ -315,7 +368,8 @@ fn main() {
             folders, headers, body, get_attachments, search,
             set_seen, move_messages, delete_messages, save_attachment,
             send_mail, save_draft, discard_draft,
-            start_sync, cache_stats
+            start_sync, cache_stats,
+            app_version, check_update, install_update, open_url
         ])
         .run(tauri::generate_context!())
         .expect("MailLine konnte nicht gestartet werden");

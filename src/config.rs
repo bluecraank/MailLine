@@ -62,6 +62,10 @@ pub struct Config {
     pub focus_folders: Vec<String>,
     pub focus_active: bool,
     pub contacts: Vec<Contact>,
+    /// "" = Systemsprache, sonst z. B. "de" / "en"
+    pub language: String,
+    /// Beim Start nicht automatisch nach Updates suchen
+    pub skip_update_check: bool,
 }
 
 impl Config {
@@ -74,10 +78,19 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        std::fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let path = Self::path();
+        let Ok(s) = std::fs::read_to_string(&path) else { return Self::default() };
+        // BOM tolerieren (z. B. wenn die Datei mit einem Windows-Editor gespeichert wurde)
+        match serde_json::from_str(s.trim_start_matches('\u{feff}')) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                // Unlesbare Datei nie stillschweigend überschreiben: Sicherungskopie anlegen
+                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                let _ = std::fs::copy(&path, path.with_extension(format!("broken-{ts}.json")));
+                eprintln!("config.json nicht lesbar ({e}), Sicherung angelegt");
+                Self::default()
+            }
+        }
     }
 
     pub fn save(&self) {
