@@ -12,6 +12,8 @@ const S = {
   heads: {},            // "id|folder" -> [MsgHead]
   bodies: {},           // "id|folder|uid" -> Body
   selUid: null,
+  sel: new Set(),       // Mehrfachauswahl (UIDs)
+  anchor: null,         // Ausgangspunkt für Shift-Auswahl
   search: "",
   editFocus: false,
   loading: new Set(),   // Schlüssel, die gerade laden
@@ -159,6 +161,7 @@ function openFolder(id, folder) {
   S.accId = id;
   S.cur = { id, folder };
   S.selUid = null;
+  S.sel = new Set(); S.anchor = null;
   S.search = "";
   S.results = null;
   $("#search").value = "";
@@ -179,6 +182,7 @@ function switchAccount(id) {
 async function openMessage(uid) {
   if (!S.cur) return;
   S.selUid = uid;
+  S.sel = new Set([uid]); S.anchor = uid;
   S.showImages = false;
   const { id, folder } = S.cur;
   const h = (S.heads[key(id, folder)] || []).find((m) => m.uid === uid);
@@ -321,7 +325,7 @@ function renderList() {
     const g = dayGroup(m.ts);
     if (g !== last) { html += `<div class="day-sep">${g}</div>`; last = g; }
     const c = colorFor(m.from_addr || m.from);
-    html += `<div class="msg ${m.unread ? "unread" : ""} ${m.uid === S.selUid ? "active" : ""}" data-uid="${m.uid}">
+    html += `<div class="msg ${m.unread ? "unread" : ""} ${isSelected(m.uid) ? "active" : ""}" data-uid="${m.uid}" draggable="true">
       <div class="av" style="background:${c}">${esc(initials(m.from))}</div>
       <div class="from">${esc(m.from || m.from_addr || t("(unbekannt)"))}</div>
       <div class="time">${fmtTime(m.ts)}</div>
@@ -351,6 +355,76 @@ function fileIcon(mime, name) {
   return `<span class="ficon" style="background:${col}">${esc(ext || "?")}</span>`;
 }
 
+// ---------- Mehrfachauswahl ----------
+const isMulti = () => !S.results && S.sel.size > 1;
+const isSelected = (uid) => (isMulti() ? S.sel.has(uid) : uid === S.selUid);
+/// Ausgewählte UIDs in Listenreihenfolge
+function selectedUids() {
+  if (!isMulti()) return S.selUid != null ? [S.selUid] : [];
+  return visibleHeads().filter((m) => S.sel.has(m.uid)).map((m) => m.uid);
+}
+function setSelection(uids, focus) {
+  S.sel = new Set(uids);
+  if (S.sel.size === 1) { const a = S.anchor; openMessage([...S.sel][0]); S.anchor = a; return; }
+  S.selUid = S.sel.size ? (focus ?? [...S.sel][0]) : null;
+  renderList(); renderReader();
+}
+function rangeUids(from, to) {
+  const list = visibleHeads().map((m) => m.uid);
+  let a = list.indexOf(from), b = list.indexOf(to);
+  if (a < 0) a = b;
+  if (a > b) [a, b] = [b, a];
+  return list.slice(a, b + 1);
+}
+function clickMessage(uid, e) {
+  if (S.results) return openMessage(uid);
+  if (e.shiftKey && S.anchor != null) {
+    const r = rangeUids(S.anchor, uid);
+    return setSelection(e.ctrlKey ? [...new Set([...selectedUids(), ...r])] : r, uid);
+  }
+  if (e.ctrlKey || e.metaKey) {
+    const cur = new Set(selectedUids());
+    cur.has(uid) ? cur.delete(uid) : cur.add(uid);
+    S.anchor = uid;
+    return setSelection([...cur], cur.has(uid) ? uid : undefined);
+  }
+  openMessage(uid);
+}
+function clearMulti() {
+  const f = S.selUid;
+  S.sel = new Set();
+  if (f != null) openMessage(f); else { renderList(); renderReader(); }
+}
+const anyUnreadIn = (uids) => (S.heads[curKey()] || []).some((m) => uids.includes(m.uid) && m.unread);
+function renderMulti(el) {
+  const uids = selectedUids();
+  const trash = isTrashFolder(S.cur.id, S.cur.folder);
+  el.innerHTML = `<div class="reader-empty"><div>
+    <div class="big">${svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>')}</div>
+    <h2>${t("{n} Nachrichten ausgewählt", { n: uids.length })}</h2>
+    <div class="multi-actions">
+      <button class="btn" data-act="sel-seen">${t(anyUnreadIn(uids) ? "Als gelesen markieren" : "Als ungelesen markieren")}</button>
+      <button class="btn danger" data-act="sel-delete">${t(trash ? "Endgültig löschen" : "Löschen")}</button>
+      <button class="btn" data-act="sel-clear">${t("Auswahl aufheben")}</button>
+    </div>
+    <div class="multi-hint">${t("Auf einen Ordner ziehen oder Rechtsklick für mehr")}</div>
+  </div></div>`;
+}
+function multiMenu(uids) {
+  const { id, folder } = S.cur;
+  const folders = (S.folders[id] || []).filter((f) => f !== folder);
+  const trash = isTrashFolder(id, folder);
+  return [
+    anyUnreadIn(uids)
+      ? { label: "Als gelesen markieren", icon: I.read, kbd: "U", run: () => setSeen(uids, true) }
+      : { label: "Als ungelesen markieren", icon: I.unread, kbd: "U", run: () => setSeen(uids, false) },
+    { label: "Verschieben nach", icon: I.move, sub: folders.map((f) => ({ label: " ".repeat(folderInfo(f, id).depth * 3) + folderInfo(f, id).label, icon: ICONS[folderInfo(f, id).icon], run: () => moveMessages(uids, f) })) },
+    "-",
+    { label: trash ? "Endgültig löschen" : "Löschen", icon: I.trash, kbd: "Entf", danger: true, run: () => deleteMessages(uids, trash) },
+    ...(!trash ? [{ label: "Endgültig löschen", icon: I.trash, kbd: "⇧ Entf", danger: true, run: () => deleteMessages(uids, true) }] : []),
+  ];
+}
+
 const curHead = () => S.cur && (S.heads[curKey()] || []).find((m) => m.uid === S.selUid);
 const curBodyKey = () => `${S.cur.id}|${S.cur.folder}|${S.selUid}`;
 const subjOf = (m) => (m.subject && m.subject !== "(kein Betreff)" ? m.subject : t("(kein Betreff)"));
@@ -358,6 +432,7 @@ const isContact = (addr) => S.cfg.contacts.some((c) => c.email.toLowerCase() ===
 
 function renderReader() {
   const el = $("#reader");
+  if (isMulti()) return renderMulti(el);
   const h = curHead();
   if (!h) {
     const n = S.cfg.accounts.length;
@@ -965,6 +1040,68 @@ function applyCols() {
     document.documentElement.style.setProperty(`--w-${k}`, v + "px");
   }
 }
+
+// ---------- Drag & Drop: Mails auf einen Ordner ziehen ----------
+function initDragDrop() {
+  let drag = null; // { id, folder, uids }
+  const clearTargets = () => document.querySelectorAll(".folder.drop-target").forEach((x) => x.classList.remove("drop-target"));
+  // Zielordner aus dem Seitenleisten-Eintrag; nur gleiches Konto und ein anderer Ordner
+  const targetOf = (e) => {
+    const f = e.target.closest?.(".folder[data-open]");
+    if (!f || !drag) return null;
+    const k = f.dataset.open, i = k.indexOf("|");
+    const id = Number(k.slice(0, i)), folder = k.slice(i + 1);
+    return id === drag.id && folder !== drag.folder ? { el: f, folder } : null;
+  };
+
+  document.addEventListener("dragstart", (e) => {
+    const m = e.target.closest?.("#messages .msg[data-uid]");
+    if (!m || !S.cur || S.results) return;
+    const uid = Number(m.dataset.uid);
+    const uids = isMulti() && S.sel.has(uid) ? selectedUids() : [uid];
+    drag = { id: S.cur.id, folder: S.cur.folder, uids };
+    if (uids.length > 1) {
+      // Eigenes Zieh-Bild mit der Anzahl statt nur der einen Zeile
+      const g = document.createElement("div");
+      g.className = "drag-ghost";
+      g.textContent = t("{n} Nachrichten", { n: uids.length });
+      document.body.appendChild(g);
+      e.dataTransfer.setDragImage(g, 16, 16);
+      setTimeout(() => g.remove(), 0);
+    }
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", m.querySelector(".subj")?.textContent || "");
+    uids.forEach((u) => document.querySelector(`#messages .msg[data-uid="${u}"]`)?.classList.add("dragging"));
+    document.body.classList.add("dragging-mail");
+  });
+  document.addEventListener("dragover", (e) => {
+    const tg = targetOf(e);
+    if (!tg) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!tg.el.classList.contains("drop-target")) { clearTargets(); tg.el.classList.add("drop-target"); }
+  });
+  document.addEventListener("dragleave", (e) => {
+    const f = e.target.closest?.(".folder");
+    if (f && !f.contains(e.relatedTarget)) f.classList.remove("drop-target");
+  });
+  document.addEventListener("drop", (e) => {
+    const tg = targetOf(e);
+    if (!tg) return;
+    e.preventDefault();
+    const d = drag;
+    clearTargets();
+    // Nur verschieben, wenn der Quellordner noch angezeigt wird (moveMessages arbeitet auf S.cur)
+    if (S.cur && S.cur.id === d.id && S.cur.folder === d.folder) moveMessages(d.uids, tg.folder);
+  });
+  document.addEventListener("dragend", () => {
+    drag = null;
+    clearTargets();
+    document.querySelectorAll(".msg.dragging").forEach((x) => x.classList.remove("dragging"));
+    document.body.classList.remove("dragging-mail");
+  });
+}
+
 function initResizers() {
   applyCols();
   document.querySelectorAll(".resizer").forEach((r) => {
@@ -1185,7 +1322,7 @@ document.addEventListener("click", (e) => {
   const hit = t.closest("[data-hit]");
   if (hit) return openHit(Number(hit.dataset.hit));
   const msg = t.closest("[data-uid]");
-  if (msg) return openMessage(Number(msg.dataset.uid));
+  if (msg) return clickMessage(Number(msg.dataset.uid), e);
   if (t.closest("[data-close]") || t.classList.contains("overlay")) return requestClose();
   const tab = t.closest("[data-tab]");
   if (tab) { settingsState.tab = tab.dataset.tab; settingsState.edit = null; return renderSettings(); }
@@ -1213,6 +1350,9 @@ document.addEventListener("click", (e) => {
     case "edit-focus": S.editFocus = !S.editFocus; return renderSidebar();
     case "images": S.showImages = true; return renderReader();
     case "edit-draft": return editDraft();
+    case "sel-seen": { const u = selectedUids(); return setSeen(u, anyUnreadIn(u)); }
+    case "sel-delete": return deleteMessages(selectedUids(), isTrashFolder(S.cur.id, S.cur.folder));
+    case "sel-clear": return clearMulti();
     case "show-update": return showUpdate();
     case "check-update": return checkUpdate(true);
     case "install-update": return installUpdate();
@@ -1293,8 +1433,21 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     let i = list.findIndex((m) => m.uid === S.selUid);
     i = e.key === "ArrowDown" || e.key === "j" ? Math.min(list.length - 1, i + 1) : Math.max(0, i - 1);
-    openMessage(list[i].uid);
+    if (e.shiftKey && S.anchor != null) setSelection(rangeUids(S.anchor, list[i].uid), list[i].uid);
+    else openMessage(list[i].uid);
     document.querySelector(`.msg[data-uid="${list[i].uid}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "a" && !S.results && visibleHeads().length) {
+    e.preventDefault();
+    if (S.anchor == null) S.anchor = visibleHeads()[0].uid;
+    return setSelection(visibleHeads().map((m) => m.uid), S.selUid ?? undefined);
+  }
+  if (isMulti()) {
+    const uids = selectedUids();
+    if (e.key === "Escape") return clearMulti();
+    if (e.key === "Delete") { e.preventDefault(); deleteMessages(uids, e.shiftKey); }
+    if (e.key === "u") setSeen(uids, anyUnreadIn(uids));
+    return;
   }
   if (e.key === "Enter" && isDraftsFolder() && curHead()) return editDraft();
   if (e.key === "r") replyOrForward(false);
@@ -1308,13 +1461,15 @@ function isTrashFolder(id, folder) { return folderInfo(folder, id).icon === "tra
 
 /// Entfernt Mails lokal aus der Liste, wählt die nächste aus; gibt eine Rückgängig-Funktion zurück.
 function removeLocally(uids) {
-  const k = curKey(), before = S.heads[k] || [], sel = S.selUid;
+  const k = curKey(), before = S.heads[k] || [], sel = S.selUid, selSet = new Set(S.sel);
   const vis = visibleHeads();
   let next = null;
   if (uids.includes(sel)) {
-    const i = vis.findIndex((m) => m.uid === sel);
+    // Nächste Mail hinter der letzten entfernten auswählen
+    const i = Math.max(...uids.map((u) => vis.findIndex((m) => m.uid === u)));
     next = vis.slice(i + 1).find((m) => !uids.includes(m.uid)) || vis.slice(0, i).reverse().find((m) => !uids.includes(m.uid)) || null;
   }
+  uids.forEach((u) => S.sel.delete(u));
   S.heads[k] = before.filter((m) => !uids.includes(m.uid));
   if (S.results) S.results = S.results.filter((m) => !(m.account === S.cur.id && m.folder === S.cur.folder && uids.includes(m.uid)));
   if (uids.includes(sel)) {
@@ -1322,7 +1477,7 @@ function removeLocally(uids) {
     if (next) openMessage(next.uid); else { renderList(); renderReader(); }
   } else renderList();
   renderListHead(); renderSidebar(); renderRail();
-  return () => { S.heads[k] = before; S.selUid = sel; renderList(); renderListHead(); renderReader(); renderSidebar(); renderRail(); };
+  return () => { S.heads[k] = before; S.selUid = sel; S.sel = selSet; renderList(); renderListHead(); renderReader(); renderSidebar(); renderRail(); };
 }
 
 function forgetFolder(id, pred) {
@@ -1507,7 +1662,8 @@ document.addEventListener("contextmenu", (e) => {
   const msg = t.closest(".msg[data-uid]");
   if (msg) {
     const uid = Number(msg.dataset.uid);
-    if (S.selUid !== uid) openMessage(uid);
+    if (isMulti() && S.sel.has(uid)) return showCtx(e.clientX, e.clientY, multiMenu(selectedUids()));
+    if (S.selUid !== uid || isMulti()) openMessage(uid);
     return showCtx(e.clientX, e.clientY, messageMenu(uid));
   }
   const f = t.closest("[data-open]");
@@ -1522,6 +1678,7 @@ document.addEventListener("contextmenu", (e) => {
       { label: "In Downloads speichern", icon: I.save, run: () => attachmentAction(idx, false) },
     ]);
   }
+  if (t.closest("#reader") && isMulti()) return showCtx(e.clientX, e.clientY, multiMenu(selectedUids()));
   if (t.closest("#reader") && curHead()) return showCtx(e.clientX, e.clientY, messageMenu(S.selUid));
   closeCtx();
 });
@@ -1571,6 +1728,7 @@ function applyStaticTexts() {
 
 (async function init() {
   initResizers();
+  initDragDrop();
   initSyncEvents();
   S.cfg = await invoke("get_config");
   LANG = detectLang(S.cfg.language);

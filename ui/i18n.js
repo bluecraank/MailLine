@@ -28,6 +28,8 @@ const I18N = {
     // Liste
     "Suchen  (Strg+K)": "Search  (Ctrl+K)", "Aktualisieren (F5)": "Refresh (F5)", "Suche": "Search",
     "{n} Treffer in allen Postfächern": "{n} results in all folders", "{n} ungelesen": "{n} unread", "{n} Nachrichten": "{n} messages",
+    "{n} Nachrichten ausgewählt": "{n} messages selected", "Auswahl aufheben": "Clear selection",
+    "Auf einen Ordner ziehen oder Rechtsklick für mehr": "Drag onto a folder or right-click for more",
     "Keine Treffer.": "No results.", "Dieser Ordner ist leer.": "This folder is empty.",
     "Gesucht wird in allen offline gespeicherten Mails.": "Searching all mails stored offline.",
     "Ziehen zum Ändern · Doppelklick = Standard": "Drag to resize · double-click = default",

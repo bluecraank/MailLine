@@ -26,6 +26,8 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 - **CC & BCC**, with autocomplete from contacts and known senders.
 - **Context menus**: right-click mails, folders, accounts or attachments to reply, forward, mark as read or unread, move or delete.
 - **Delete with `Del`**: the mail goes to the trash. `Shift+Del` deletes it permanently.
+- **Multi-select**: `Ctrl`+click, `Shift`+click, `Shift+↑/↓` or `Ctrl+A`, then delete, mark as read, move or drag the whole selection at once.
+- **Drag & drop**: drag mails onto a folder in the sidebar to move them.
 - **HTML mails** render properly. Remote images are blocked by default (tracking pixels, no thanks).
 - **Light & dark**: follows your Windows theme.
 - **Resizable columns**: drag to adjust, double-click to reset.
@@ -44,6 +46,8 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 | `Ctrl+Shift+F` | Toggle focus mode |
 | `Ctrl+Shift+K` | Contacts |
 | `↑` / `↓` (or `j` / `k`) | Browse mails |
+| `Shift+↑` / `Shift+↓`, `Ctrl+A` | Extend selection, select all |
+| `Esc` | Clear selection |
 | `R` | Reply |
 | `W` | Forward menu |
 | `U` | Toggle read / unread |
@@ -113,7 +117,7 @@ It's vibe coded, so:
 
 - Offline sync covers the **newest 1,000 mails per folder**. Spam and trash are skipped, and mails over 25 MB stay online-only.
 - **Sending requires a connection**. There's no outbox queue yet.
-- No "Reply all", no multi-select, no rich-text editor (plain text only).
+- No "Reply all", no rich-text editor (plain text only).
 - Built and tested primarily on **Windows**.
 - No OAuth: Gmail and Outlook need an **app password**.
 

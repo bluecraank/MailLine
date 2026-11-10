@@ -1,12 +1,12 @@
 {
   "productName": "MailLine",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "identifier": "de.coredisplay.mailline",
   "build": { "frontendDist": "./ui" },
   "app": {
     "withGlobalTauri": true,
     "windows": [
-      { "title": "MailLine", "width": 1320, "height": 840, "minWidth": 960, "minHeight": 600, "center": true }
+      { "title": "MailLine", "width": 1320, "height": 840, "minWidth": 960, "minHeight": 600, "center": true, "dragDropEnabled": false }
     ],
     "security": { "csp": null }
   },

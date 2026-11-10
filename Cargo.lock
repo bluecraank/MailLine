@@ -2237,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "mailline"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2256,6 +2256,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-single-instance",
  "ureq",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]

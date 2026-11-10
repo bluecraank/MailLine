@@ -342,6 +342,26 @@ fn cache_stats(state: State<AppState>) -> SyncDone {
     SyncDone { messages, offline }
 }
 
+/// Die eingebaute Autovervollständigung von WebView2 abschalten: Sie merkt sich Eingaben
+/// (z. B. im An-Feld) und blendet ein eigenes Vorschlagsfenster über die Kontaktvorschläge
+/// von MailLine, wodurch beide ständig auf- und zuklappen.
+#[cfg(windows)]
+fn disable_browser_autofill(w: &tauri::WebviewWindow) {
+    let _ = w.with_webview(|wv| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+        use windows::core::Interface;
+        let Ok(core) = wv.controller().CoreWebView2() else { return };
+        let Ok(settings) = core.Settings() else { return };
+        if let Ok(s4) = settings.cast::<ICoreWebView2Settings4>() {
+            let _ = s4.SetIsGeneralAutofillEnabled(false);
+            let _ = s4.SetIsPasswordAutosaveEnabled(false);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn disable_browser_autofill(_w: &tauri::WebviewWindow) {}
+
 fn main() {
     update::wait_for_previous();
     update::cleanup();
@@ -358,6 +378,12 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
+        .setup(|app| {
+            for w in app.webview_windows().values() {
+                disable_browser_autofill(w);
+            }
+            Ok(())
+        })
         .manage(AppState {
             cfg: Mutex::new(Config::load()),
             store: Arc::new(Store::new(cache)),
