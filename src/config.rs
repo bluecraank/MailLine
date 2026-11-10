@@ -66,6 +66,18 @@ pub struct Config {
     pub language: String,
     /// Beim Start nicht automatisch nach Updates suchen
     pub skip_update_check: bool,
+    /// Eigene Skalierung der Oberfläche in Prozent (0 = 100 %), zusätzlich zur Windows-Skalierung
+    pub zoom: u16,
+}
+
+impl Config {
+    pub fn zoom_factor(&self) -> f64 {
+        if self.zoom == 0 { 1.0 } else { f64::from(clamp_zoom(self.zoom)) / 100.0 }
+    }
+}
+
+pub fn clamp_zoom(p: u16) -> u16 {
+    p.clamp(50, 250)
 }
 
 impl Config {

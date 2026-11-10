@@ -296,6 +296,17 @@ fn start_sync(app: AppHandle, state: State<AppState>) -> bool {
 
 // ------------------------------------------------------------------ Updates
 
+/// Oberfläche skalieren (Prozent) und die Einstellung speichern. Gibt den tatsächlich gesetzten Wert zurück.
+#[tauri::command]
+fn set_zoom(window: tauri::WebviewWindow, state: State<AppState>, percent: u16) -> Result<u16, String> {
+    let p = config::clamp_zoom(percent);
+    window.set_zoom(f64::from(p) / 100.0).map_err(|e| e.to_string())?;
+    let mut cfg = state.cfg.lock().unwrap();
+    cfg.zoom = p;
+    cfg.save();
+    Ok(p)
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     update::VERSION
@@ -379,8 +390,12 @@ fn main() {
             }
         }))
         .setup(|app| {
+            let zoom = app.state::<AppState>().cfg.lock().unwrap().zoom_factor();
             for w in app.webview_windows().values() {
                 disable_browser_autofill(w);
+                if zoom != 1.0 {
+                    let _ = w.set_zoom(zoom);
+                }
             }
             Ok(())
         })
@@ -395,7 +410,7 @@ fn main() {
             set_seen, move_messages, delete_messages, save_attachment,
             send_mail, save_draft, discard_draft,
             start_sync, cache_stats,
-            app_version, check_update, install_update, open_url
+            app_version, check_update, install_update, open_url, set_zoom
         ])
         .run(tauri::generate_context!())
         .expect("MailLine konnte nicht gestartet werden");

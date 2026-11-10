@@ -106,6 +106,28 @@ function folderInfo(name, id) {
 }
 
 // ---------------------------------------------------------------- Daten
+// ---------- Skalierung der Oberfläche ----------
+const ZOOM_STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250];
+const curZoom = () => S.cfg.zoom || 100;
+async function setZoom(p, quiet) {
+  try {
+    S.cfg.zoom = await invoke("set_zoom", { percent: Math.round(p) });
+    if (!quiet) toast(t("Größe: {p} %", { p: S.cfg.zoom }));
+    const zs = $("#g-zoom"); if (zs) zs.value = String(S.cfg.zoom);
+  } catch (e) { toast(String(e), "err"); }
+}
+function stepZoom(dir) {
+  const z = curZoom();
+  const next = dir > 0 ? ZOOM_STEPS.find((s) => s > z) : [...ZOOM_STEPS].reverse().find((s) => s < z);
+  if (next) setZoom(next);
+}
+function onZoomWheel(e) {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  stepZoom(e.deltaY < 0 ? 1 : -1);
+}
+document.addEventListener("wheel", onZoomWheel, { passive: false });
+
 async function saveCfg() {
   try { await invoke("save_config", { cfg: S.cfg }); } catch (e) { toast(String(e), "err"); }
 }
@@ -891,6 +913,13 @@ function generalSettings() {
       </select>
     </div>
     <div class="set-sec">
+      <h4>${t("Größe der Oberfläche")}</h4>
+      <select id="g-zoom" class="set-select">
+        ${[...new Set([...ZOOM_STEPS, curZoom()])].sort((a, b) => a - b).map((z) => `<option value="${z}" ${z === curZoom() ? "selected" : ""}>${z} %${z === 100 ? " (" + t("Standard") + ")" : ""}</option>`).join("")}
+      </select>
+      <div class="muted" style="margin-top:8px;font-size:12.5px">${t("Zusätzlich zur Windows-Skalierung. Schneller: Strg + Mausrad, Strg +/− und Strg+0.")}</div>
+    </div>
+    <div class="set-sec">
       <h4>${t("Updates")}</h4>
       <div class="muted" style="margin-bottom:10px">${t("Installierte Version")}: <b>v${esc(S.version)}</b></div>
       <label class="check"><input type="checkbox" id="g-autoupd" ${S.cfg.skip_update_check ? "" : "checked"}/> <span>${t("Beim Start automatisch nach Updates suchen")}</span></label>
@@ -1239,6 +1268,8 @@ function renderSettings() {
   if (sa) sa.onchange = () => { settingsState.sigAcc = Number(sa.value); renderSettings(); };
   const gl = $("#g-lang");
   if (gl) gl.onchange = async () => { S.cfg.language = gl.value; await saveCfg(); location.reload(); };
+  const gz = $("#g-zoom");
+  if (gz) gz.onchange = () => setZoom(Number(gz.value), true);
   const gu = $("#g-autoupd");
   if (gu) gu.onchange = () => { S.cfg.skip_update_check = !gu.checked; saveCfg(); };
 }
@@ -1418,6 +1449,9 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key.toLowerCase() === "k") { e.preventDefault(); return $("#search").focus(); }
   if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); return openCompose(); }
   if (e.key === "F5") { e.preventDefault(); return S.cur && loadHeads(S.cur.id, S.cur.folder); }
+  if (e.ctrlKey && !e.altKey && (e.key === "+" || e.key === "=")) { e.preventDefault(); return stepZoom(1); }
+  if (e.ctrlKey && !e.altKey && e.key === "-") { e.preventDefault(); return stepZoom(-1); }
+  if (e.ctrlKey && !e.altKey && e.key === "0") { e.preventDefault(); return setZoom(100); }
   if (inField || $("#modal-root").innerHTML) return;
   if (S.results && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
     e.preventDefault();
@@ -1709,6 +1743,7 @@ function wireIframe(frame) {
       showCtx(r.left + e.clientX, r.top + e.clientY, items);
     });
     doc.addEventListener("mousedown", closeCtx);
+    doc.addEventListener("wheel", onZoomWheel, { passive: false });
   });
 }
 

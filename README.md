@@ -31,6 +31,7 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 - **HTML mails** render properly. Remote images are blocked by default (tracking pixels, no thanks).
 - **Light & dark**: follows your Windows theme.
 - **Resizable columns**: drag to adjust, double-click to reset.
+- **Interface size**: scale MailLine on top of the Windows scaling with `Ctrl` + mouse wheel, `Ctrl +/−` (`Ctrl+0` resets), or in Settings → General.
 - **Server presets** for Gmail, Outlook, GMX, web.de, T-Online, iCloud, Posteo, mailbox.org and Yahoo.
 - **Passwords** are stored in the Windows Credential Manager, not in plain text on disk.
 - **German & English UI**: follows your Windows language. Switch it in Settings → General.
@@ -57,6 +58,7 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 | `Ctrl+Enter` | Send |
 | `Ctrl+S` | Save draft |
 | `F5` | Refresh |
+| `Ctrl` + wheel, `Ctrl +` / `Ctrl −`, `Ctrl+0` | Zoom in / out / reset |
 
 ## Tech stack
 
