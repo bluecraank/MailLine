@@ -15,7 +15,6 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 ## Features
 
 - **Multiple accounts**: all your IMAP mailboxes in one window. Switch with a click or `Ctrl+1…9`.
-- **Focus mode**: star the folders that matter right now, across accounts, and hide everything else. No more newsletter noise.
 - **Multiple signatures per account**: e.g. German and English, switchable with one click while writing.
 - **Contacts with quick forward**: an invoice comes in → "Forward to" → Accounting → done. The mail goes out with all its attachments, no typing.
 - **Offline mode**: the newest 1,000 mails of every folder are synced in the background, including their content. No connection? MailLine keeps working from the local cache.
@@ -44,7 +43,6 @@ No Electron, no cloud, no account with anybody. Just you, your IMAP server and a
 | `Ctrl+1` … `Ctrl+9` | Switch account |
 | `Ctrl+N` | New message |
 | `Ctrl+K` | Search (all accounts & folders) |
-| `Ctrl+Shift+F` | Toggle focus mode |
 | `Ctrl+Shift+K` | Contacts |
 | `↑` / `↓` (or `j` / `k`) | Browse mails |
 | `Shift+↑` / `Shift+↓`, `Ctrl+A` | Extend selection, select all |
@@ -72,7 +70,12 @@ The release `.exe` is about 11 MB.
 
 ## Download
 
-Get the latest `mailline.exe` from [Releases](../../releases). No installation needed. Put it somewhere you have write access (e.g. your user folder), so the built-in updater can replace it.
+Get the latest version from [Releases](../../releases):
+
+- **`MailLine_x.y.z_x64-setup.exe`**: installer (recommended). Installs for your user only, without admin rights, and adds a Start menu entry and an uninstaller.
+- **`MailLine-x.y.z-windows-x64.exe`**: portable, no installation. Put it somewhere you have write access (e.g. your user folder), so the built-in updater can replace it.
+
+Both update themselves from inside the app.
 
 The binary isn't code-signed, so Windows SmartScreen may complain on first launch ("More info" → "Run anyway").
 
@@ -88,11 +91,19 @@ cargo run --release
 
 The binary ends up in `target/release/mailline.exe`.
 
+To build the installer as well (needs Node.js for `npx`):
+
+```sh
+npx @tauri-apps/cli@2 build
+```
+
+It ends up in `target/release/bundle/nsis/`.
+
 ## Where is my data?
 
 | What | Where |
 |---|---|
-| Accounts, signatures, contacts, focus folders | `%APPDATA%\MailLine\config.json` |
+| Accounts, signatures, contacts, settings | `%APPDATA%\MailLine\config.json` |
 | Passwords | Windows Credential Manager (`MailLine`) |
 | Offline cache & search index | `%LOCALAPPDATA%\MailLine\cache.db` |
 | Opened attachments (temporary) | `%TEMP%\MailLine\` |

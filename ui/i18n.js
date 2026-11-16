@@ -28,7 +28,7 @@ const I18N = {
     // Liste
     "Suchen  (Strg+K)": "Search  (Ctrl+K)", "Aktualisieren (F5)": "Refresh (F5)", "Suche": "Search",
     "{n} Treffer in allen Postfächern": "{n} results in all folders", "{n} ungelesen": "{n} unread", "{n} Nachrichten": "{n} messages",
-    "{n} Nachrichten ausgewählt": "{n} messages selected",
+    "{n} Nachrichten ausgewählt": "{n} messages selected", "Beantwortet": "Replied", "Weitergeleitet": "Forwarded",
     "Größe der Oberfläche": "Interface size", "Größe: {p} %": "Size: {p} %",
     "Zusätzlich zur Windows-Skalierung. Schneller: Strg + Mausrad, Strg +/− und Strg+0.": "On top of the Windows scaling. Faster: Ctrl + mouse wheel, Ctrl +/− and Ctrl+0.", "Auswahl aufheben": "Clear selection",
     "Auf einen Ordner ziehen oder Rechtsklick für mehr": "Drag onto a folder or right-click for more",

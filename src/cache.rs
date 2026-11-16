@@ -25,6 +25,13 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
+/// Bits in msgs.flags
+pub const ANSWERED: i64 = 1;
+pub const FORWARDED: i64 = 2;
+fn flag_bits(h: &MsgHead) -> i64 {
+    (if h.answered { ANSWERED } else { 0 }) | (if h.forwarded { FORWARDED } else { 0 })
+}
+
 /// has_body: 0 = noch nicht geladen, 1 = vollständig im Cache, 2 = zu groß (nur online)
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -52,6 +59,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
 );
 "#;
 
+/// Spalten, die nach v0.3 dazugekommen sind (Fehler = Spalte existiert schon)
+fn migrate(conn: &Connection) {
+    let _ = conn.execute("ALTER TABLE msgs ADD COLUMN flags INTEGER NOT NULL DEFAULT 0", []);
+}
+
 impl Cache {
     pub fn open() -> Result<Self> {
         let mut dir = dirs::data_local_dir().unwrap_or_else(std::env::temp_dir);
@@ -59,6 +71,7 @@ impl Cache {
         std::fs::create_dir_all(&dir)?;
         let conn = Connection::open(dir.join("cache.db"))?;
         conn.execute_batch(SCHEMA)?;
+        migrate(&conn);
         Ok(Self { db: Mutex::new(conn) })
     }
 
@@ -66,6 +79,7 @@ impl Cache {
     pub fn in_memory() -> Self {
         let conn = Connection::open_in_memory().expect("SQLite");
         conn.execute_batch(SCHEMA).expect("Schema");
+        migrate(&conn);
         Self { db: Mutex::new(conn) }
     }
 
@@ -126,9 +140,9 @@ impl Cache {
         let tx = db.transaction()?;
         for h in heads {
             let inserted = tx.execute(
-                "INSERT OR IGNORE INTO msgs (account, folder, uid, from_name, from_addr, subject, ts, unread)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![acc as i64, folder, h.uid, h.from, h.from_addr, h.subject, h.ts, h.unread],
+                "INSERT OR IGNORE INTO msgs (account, folder, uid, from_name, from_addr, subject, ts, unread, flags)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![acc as i64, folder, h.uid, h.from, h.from_addr, h.subject, h.ts, h.unread, flag_bits(h)],
             )?;
             if inserted == 1 {
                 let id = tx.last_insert_rowid();
@@ -138,8 +152,8 @@ impl Cache {
                 )?;
             } else {
                 tx.execute(
-                    "UPDATE msgs SET unread = ?4 WHERE account = ?1 AND folder = ?2 AND uid = ?3",
-                    params![acc as i64, folder, h.uid, h.unread],
+                    "UPDATE msgs SET unread = ?4, flags = ?5 WHERE account = ?1 AND folder = ?2 AND uid = ?3",
+                    params![acc as i64, folder, h.uid, h.unread, flag_bits(h)],
                 )?;
             }
         }
@@ -187,7 +201,7 @@ impl Cache {
     pub fn heads(&self, acc: u64, folder: &str, limit: u32) -> Result<Vec<MsgHead>> {
         let db = self.db.lock().unwrap();
         let mut st = db.prepare(
-            "SELECT uid, from_name, from_addr, subject, ts, unread FROM msgs
+            "SELECT uid, from_name, from_addr, subject, ts, unread, flags FROM msgs
              WHERE account = ?1 AND folder = ?2 ORDER BY ts DESC, uid DESC LIMIT ?3",
         )?;
         let v = st
@@ -199,10 +213,46 @@ impl Cache {
                     subject: r.get(3)?,
                     ts: r.get(4)?,
                     unread: r.get(5)?,
+                    answered: r.get::<_, i64>(6)? & ANSWERED != 0,
+                    forwarded: r.get::<_, i64>(6)? & FORWARDED != 0,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(v)
+    }
+
+    pub fn known_uids(&self, acc: u64, folder: &str) -> Result<HashSet<u32>> {
+        let db = self.db.lock().unwrap();
+        let mut st = db.prepare("SELECT uid FROM msgs WHERE account = ?1 AND folder = ?2")?;
+        let v = st.query_map(params![acc as i64, folder], |r| r.get::<_, u32>(0))?.collect::<Result<HashSet<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Flags bekannter Mails aktualisieren (nur geänderte Zeilen werden geschrieben)
+    pub fn update_flags(&self, acc: u64, folder: &str, items: &[(u32, crate::backend::FlagState)]) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        let tx = db.transaction()?;
+        {
+            let mut st = tx.prepare(
+                "UPDATE msgs SET unread = ?4, flags = ?5
+                 WHERE account = ?1 AND folder = ?2 AND uid = ?3 AND (unread <> ?4 OR flags <> ?5)",
+            )?;
+            for (uid, f) in items {
+                let bits = (if f.answered { ANSWERED } else { 0 }) | (if f.forwarded { FORWARDED } else { 0 });
+                st.execute(params![acc as i64, folder, uid, f.unread, bits])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn add_flags(&self, acc: u64, folder: &str, uid: u32, bits: i64) -> Result<()> {
+        let db = self.db.lock().unwrap();
+        db.execute(
+            "UPDATE msgs SET flags = flags | ?4 WHERE account = ?1 AND folder = ?2 AND uid = ?3",
+            params![acc as i64, folder, uid, bits],
+        )?;
+        Ok(())
     }
 
     pub fn set_unread(&self, acc: u64, folder: &str, uids: &[u32], unread: bool) -> Result<()> {

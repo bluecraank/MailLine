@@ -146,6 +146,7 @@ async fn save_attachment(state: State<'_, AppState>, account_id: u64, folder: St
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 struct ForwardRef {
     account_id: u64,
     folder: String,
@@ -172,6 +173,12 @@ struct Compose {
     forward: Option<ForwardRef>,
     /// Message-ID des Entwurfs, aus dem diese Nachricht stammt
     draft_id: Option<String>,
+    /// Antwort auf diese Nachricht (wird nach dem Senden als beantwortet markiert)
+    #[serde(default)]
+    reply_to: Option<ForwardRef>,
+    /// Weitergeleitete Nachricht (wird nach dem Senden als weitergeleitet markiert, auch ohne Anhänge)
+    #[serde(default)]
+    forward_of: Option<ForwardRef>,
 }
 
 impl Compose {
@@ -213,6 +220,12 @@ struct SendOut {
 #[tauri::command]
 async fn send_mail(state: State<'_, AppState>, mail: Compose) -> Result<SendOut, String> {
     let (acc, src, mut c) = mail.resolve(&state)?;
+    // Original, das nach dem Senden als beantwortet/weitergeleitet markiert wird
+    let original = match (c.reply_to.take(), c.forward_of.take().or_else(|| c.forward.clone())) {
+        (Some(r), _) => Some((state.account(r.account_id)?, r, false)),
+        (None, Some(f)) => Some((state.account(f.account_id)?, f, true)),
+        _ => None,
+    };
     let store = state.store.clone();
     blocking(move || {
         let draft_id = c.draft_id.take();
@@ -227,6 +240,10 @@ async fn send_mail(state: State<'_, AppState>, mail: Compose) -> Result<SendOut,
         }
         if let Some(id) = draft_id {
             let _ = store.discard_draft(&acc, &id);
+        }
+        if let Some((owner, r, fwd)) = original {
+            // Markierung ist Komfort: ein Fehler hier soll das erfolgreiche Senden nicht überdecken
+            let _ = store.mark_replied(&owner, &r.folder, r.uid, fwd);
         }
         Ok(out)
     })
@@ -278,6 +295,17 @@ fn start_sync(app: AppHandle, state: State<AppState>) -> bool {
     let store = state.store.clone();
     let flag = state.syncing.clone();
     std::thread::spawn(move || {
+        // Auch bei einem Absturz im Sync: Flag zurücksetzen und "fertig" melden,
+        // sonst würde der Sync nie wieder starten und die Anzeige ewig drehen
+        struct Done(AppHandle, Arc<AtomicBool>, Arc<Store>);
+        impl Drop for Done {
+            fn drop(&mut self) {
+                let (messages, offline) = self.2.cache.stats();
+                let _ = self.0.emit("sync-done", SyncDone { messages, offline });
+                self.1.store(false, Ordering::SeqCst);
+            }
+        }
+        let _done = Done(app.clone(), flag, store.clone());
         for acc in &accounts {
             let app2 = app.clone();
             let r = store.sync_account(acc, &move |p| {
@@ -287,9 +315,6 @@ fn start_sync(app: AppHandle, state: State<AppState>) -> bool {
                 let _ = app.emit("sync-error", format!("{}: {e:#}", acc.email));
             }
         }
-        let (messages, offline) = store.cache.stats();
-        let _ = app.emit("sync-done", SyncDone { messages, offline });
-        flag.store(false, Ordering::SeqCst);
     });
     true
 }

@@ -26,6 +26,28 @@ pub struct MsgHead {
     pub subject: String,
     pub ts: i64,
     pub unread: bool,
+    /// \Answered: ich habe auf diese Mail geantwortet
+    pub answered: bool,
+    /// $Forwarded: ich habe diese Mail weitergeleitet
+    pub forwarded: bool,
+}
+
+/// Gelesen/Beantwortet/Weitergeleitet aus den IMAP-Flags
+#[derive(Clone, Copy)]
+pub struct FlagState {
+    pub unread: bool,
+    pub answered: bool,
+    pub forwarded: bool,
+}
+
+impl FlagState {
+    fn of(flags: &[Flag]) -> Self {
+        Self {
+            unread: !flags.iter().any(|f| matches!(f, Flag::Seen)),
+            answered: flags.iter().any(|f| matches!(f, Flag::Answered)),
+            forwarded: flags.iter().any(|f| matches!(f, Flag::Custom(c) if c.eq_ignore_ascii_case("$Forwarded"))),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -199,22 +221,41 @@ impl Store {
             return Ok(());
         }
         let start = mb.exists.saturating_sub(depth - 1).max(1);
-        let fetches = s.fetch(
-            format!("{start}:{}", mb.exists),
-            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])",
-        )?;
+        // 1) Nur Flags holen – billig, auch bei 1000 Mails
+        let flag_fetch = s.fetch(format!("{start}:{}", mb.exists), "(UID FLAGS)")?;
+        let known = self.cache.known_uids(acc, folder)?;
+        let mut updates = Vec::new();
+        let mut new_uids = Vec::new();
+        for f in flag_fetch.iter() {
+            let Some(uid) = f.uid else { continue };
+            let st = FlagState::of(f.flags());
+            if known.contains(&uid) { updates.push((uid, st)); } else { new_uids.push(uid); }
+        }
+        self.cache.update_flags(acc, folder, &updates)?;
+        // 2) Kopfzeilen nur für Mails, die noch nicht im Cache sind
         let parser = mail_parser::MessageParser::default();
-        let heads: Vec<MsgHead> = fetches
-            .iter()
-            .filter_map(|f| {
-                let uid = f.uid?;
-                let unread = !f.flags().iter().any(|fl| matches!(fl, Flag::Seen));
-                Some(parse_head(&parser, uid, unread, f.header().or_else(|| f.body())))
-            })
-            .collect();
-        self.cache.upsert_heads(acc, folder, &heads)?;
-        // Auf dem Server gelöschte/verschobene Mails aus dem Cache entfernen
-        let all = s.uid_search("ALL")?;
+        for chunk in new_uids.chunks(200) {
+            let fetches = s.uid_fetch(uid_set(chunk), "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")?;
+            let heads: Vec<MsgHead> = fetches
+                .iter()
+                .filter_map(|f| {
+                    let uid = f.uid?;
+                    let st = FlagState::of(f.flags());
+                    let mut h = parse_head(&parser, uid, st.unread, f.header().or_else(|| f.body()));
+                    h.answered = st.answered;
+                    h.forwarded = st.forwarded;
+                    Some(h)
+                })
+                .collect();
+            self.cache.upsert_heads(acc, folder, &heads)?;
+        }
+        // 3) Auf dem Server gelöschte/verschobene Mails aus dem Cache entfernen
+        let all: HashSet<u32> = if start == 1 {
+            // Ganzer Ordner wurde gerade abgefragt – kein zusätzliches SEARCH nötig
+            flag_fetch.iter().filter_map(|f| f.uid).collect()
+        } else {
+            s.uid_search("ALL")?
+        };
         self.cache.prune(acc, folder, &all)?;
         Ok(())
     }
@@ -251,6 +292,17 @@ impl Store {
             Ok(())
         })?;
         self.cache.set_unread(acc.id, folder, uids, !seen)
+    }
+
+    /// Nach dem Senden: Original als beantwortet (\Answered) bzw. weitergeleitet ($Forwarded) markieren.
+    pub fn mark_replied(&self, acc: &Account, folder: &str, uid: u32, forwarded: bool) -> Result<()> {
+        self.with_session(acc, |s| {
+            s.select(folder)?;
+            let op = if forwarded { "+FLAGS.SILENT ($Forwarded)" } else { r"+FLAGS.SILENT (\Answered)" };
+            s.uid_store(uid.to_string(), op)?;
+            Ok(())
+        })?;
+        self.cache.add_flags(acc.id, folder, uid, if forwarded { crate::cache::FORWARDED } else { crate::cache::ANSWERED })
     }
 
     pub fn move_to(&self, acc: &Account, folder: &str, uids: &[u32], target: &str) -> Result<()> {
@@ -521,7 +573,7 @@ fn decode_mutf7(s: &str) -> String {
 // -------------------------------------------------------------------- MIME-Helfer
 
 fn parse_head(parser: &mail_parser::MessageParser, uid: u32, unread: bool, header: Option<&[u8]>) -> MsgHead {
-    let mut h = MsgHead { uid, from: String::new(), from_addr: String::new(), subject: String::new(), ts: 0, unread };
+    let mut h = MsgHead { uid, from: String::new(), from_addr: String::new(), subject: String::new(), ts: 0, unread, answered: false, forwarded: false };
     if let Some(m) = header.and_then(|b| parser.parse(b)) {
         h.subject = m.subject().unwrap_or("(kein Betreff)").to_string();
         if let Some(a) = m.from().and_then(|a| a.first()) {

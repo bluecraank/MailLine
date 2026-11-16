@@ -60,7 +60,11 @@ pub fn check() -> Result<UpdateInfo> {
         .call()
         .context("GitHub nicht erreichbar")?;
     let rel: Release = resp.body_mut().read_json().context("Antwort von GitHub nicht lesbar")?;
-    let asset = rel.assets.iter().find(|a| a.name.to_lowercase().ends_with(".exe"));
+    // Die portable App-Datei, nicht den Installer (…-setup.exe)
+    let asset = rel.assets.iter().find(|a| {
+        let n = a.name.to_lowercase();
+        n.ends_with(".exe") && !n.contains("setup") && !n.contains("installer")
+    });
     let available = !rel.draft && !rel.prerelease && parse_version(&rel.tag_name) > parse_version(VERSION) && asset.is_some();
     Ok(UpdateInfo {
         current: VERSION.into(),

@@ -58,9 +58,6 @@ pub struct Contact {
 #[serde(default)]
 pub struct Config {
     pub accounts: Vec<Account>,
-    /// Fokus-Postfächer als "kontoId|Ordner"
-    pub focus_folders: Vec<String>,
-    pub focus_active: bool,
     pub contacts: Vec<Contact>,
     /// "" = Systemsprache, sonst z. B. "de" / "en"
     pub language: String,

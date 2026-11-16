@@ -5,7 +5,7 @@ const $ = (s) => document.querySelector(s);
 
 // ---------------------------------------------------------------- Zustand
 const S = {
-  cfg: { accounts: [], focus_folders: [], focus_active: false },
+  cfg: { accounts: [] },
   accId: null,          // aktives Konto
   folders: {},          // accId -> [Ordner]
   cur: null,            // { id, folder }
@@ -15,7 +15,6 @@ const S = {
   sel: new Set(),       // Mehrfachauswahl (UIDs)
   anchor: null,         // Ausgangspunkt für Shift-Auswahl
   search: "",
-  editFocus: false,
   loading: new Set(),   // Schlüssel, die gerade laden
   showImages: false,
   fmeta: {},            // "id|folder" -> { label, depth }
@@ -193,11 +192,6 @@ function openFolder(id, folder) {
 
 function switchAccount(id) {
   if (!account(id)) return;
-  if (S.cfg.focus_active) {
-    // Im Fokus-Modus: erstes Fokus-Postfach dieses Kontos, sonst Posteingang
-    const f = S.cfg.focus_folders.find((k) => k.startsWith(id + "|"));
-    if (f) return openFolder(id, f.slice(f.indexOf("|") + 1));
-  }
   openFolder(id, "INBOX");
 }
 
@@ -249,28 +243,22 @@ function renderRail() {
     <button class="rail-btn solid" data-act="settings" title="${t("Einstellungen")}">${svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')}</button>`;
 }
 
-function folderRow(id, name, { showAcc = false } = {}) {
+function folderRow(id, name) {
   const info = folderInfo(name, id);
   const k = key(id, name);
   const active = curKey() === k;
-  const isFocus = S.cfg.focus_folders.includes(k);
   const h = S.heads[k];
   const n = h ? h.filter((m) => m.unread).length : 0;
-  const acc = account(id);
-  const lead = showAcc
-    ? `<span class="dot" style="background:${accColor(acc)}"></span>`
-    : svg(ICONS[info.icon]);
-  const label = showAcc ? `${esc(info.label)} <span class="muted">· ${esc(acc.name || acc.email)}</span>` : esc(info.label);
+  const lead = svg(ICONS[info.icon]);
+  const label = esc(info.label);
   return `<div class="folder ${active ? "active" : ""}" data-open="${esc(k)}" style="padding-left:${10 + info.depth * 14}px" title="${esc(name)}">
     ${lead}<span class="fname">${label}</span>
     ${n ? `<span class="count">${n}</span>` : ""}
-    <button class="star ${isFocus ? "on" : ""}" data-star="${esc(k)}" title="${t("Als Fokus-Postfach markieren")}">${svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>')}</button>
   </div>`;
 }
 
 function renderSidebar() {
   const acc = account(S.accId);
-  const focus = S.cfg.focus_active;
   let body = "";
 
   if (!acc) {
@@ -279,32 +267,15 @@ function renderSidebar() {
     return;
   }
 
-  if (focus && !S.editFocus) {
-    const items = S.cfg.focus_folders
-      .map((k) => { const i = k.indexOf("|"); return [Number(k.slice(0, i)), k.slice(i + 1)]; })
-      .filter(([id]) => account(id));
-    body = `<div class="section-label">${t("Fokus-Postfächer")} <button data-act="edit-focus">${t("Bearbeiten")}</button></div>
-      <div class="folders">${items.length
-        ? items.map(([id, f]) => folderRow(id, f, { showAcc: true })).join("")
-        : `<div class="empty-hint">${t("Noch keine Fokus-Postfächer.")}<br>${t("Tippe auf <b>Bearbeiten</b> und markiere Ordner mit ★ – egal aus welchem Konto.")}</div>`}</div>`;
-  } else {
-    const list = S.folders[acc.id];
-    body = `<div class="section-label">${t("Ordner")} ${S.editFocus
-        ? `<button data-act="edit-focus">${t("Fertig")}</button>`
-        : `<button data-act="edit-focus" title="${t("Fokus-Postfächer auswählen")}">${t("★ Fokus wählen")}</button>`}</div>
-      <div class="folders ${S.editFocus ? "editing" : ""}">${list
-        ? list.map((f) => folderRow(acc.id, f)).join("")
-        : `<div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div>`}</div>`;
-  }
+  const list = S.folders[acc.id];
+  body = `<div class="section-label">${t("Ordner")}</div>
+    <div class="folders">${list
+      ? list.map((f) => folderRow(acc.id, f)).join("")
+      : `<div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div><div class="skel" style="height:30px"></div>`}</div>`;
 
   $("#sidebar").innerHTML = `
     <div class="acc-head"><div class="name">${esc(acc.name || acc.email)}</div><div class="mail">${esc(acc.email)}</div></div>
     <button class="compose-btn" data-act="compose">${svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>')} ${t("Neue Nachricht")}</button>
-    <div class="focus-toggle" data-act="toggle-focus" title="${t("Strg+Umschalt+F")}">
-      ${svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>')}
-      <span class="lbl">${t("Fokus-Modus")}<span class="sub">${t(focus ? "Nur ausgewählte Postfächer" : "Alle Postfächer sichtbar")}</span></span>
-      <span class="switch ${focus ? "on" : ""}"></span>
-    </div>
     ${body}
     ${S.update ? `<button class="update-banner" data-act="show-update">${svg('<path d="M12 19V5M5 12l7-7 7 7"/>')}<span>${t("Update {v} verfügbar", { v: S.update.latest })}</span></button>` : ""}
     <div id="sync-status" class="sync-status"></div>`;
@@ -331,6 +302,15 @@ function visibleHeads() {
   return h.filter((m) => m.subject.toLowerCase().includes(q) || m.from.toLowerCase().includes(q) || m.from_addr.toLowerCase().includes(q));
 }
 
+const REPLY_ICON = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+const FWD_ICON = '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>';
+function stateIcons(m) {
+  let s = "";
+  if (m.answered) s += `<span class="st-icon" title="${t("Beantwortet")}">${svg(REPLY_ICON)}</span>`;
+  if (m.forwarded) s += `<span class="st-icon" title="${t("Weitergeleitet")}">${svg(FWD_ICON)}</span>`;
+  return s;
+}
+
 function renderList() {
   const el = $("#messages");
   if (S.results) return renderResults(el);
@@ -351,7 +331,7 @@ function renderList() {
       <div class="av" style="background:${c}">${esc(initials(m.from))}</div>
       <div class="from">${esc(m.from || m.from_addr || t("(unbekannt)"))}</div>
       <div class="time">${fmtTime(m.ts)}</div>
-      <div class="subj">${esc(subjOf(m))}</div></div>`;
+      <div class="subj">${stateIcons(m)}${esc(subjOf(m))}</div></div>`;
   }
   el.innerHTML = html;
 }
@@ -546,7 +526,8 @@ async function quickForward(contactId) {
     let body = forwardText(h, b);
     const sig = signatureOf(acc, acc.default_signature);
     if (sig && sig.text) body = `\n\n-- \n${sig.text}\n\n` + body;
-    const r = await invoke("send_mail", { mail: { accountId: acc.id, to: ct.email, subject: fwdSubject(h), body, attachments: [], forward: src } });
+    const r = await invoke("send_mail", { mail: { accountId: acc.id, to: ct.email, subject: fwdSubject(h), body, attachments: [], forward: src, forwardOf: src } });
+    markOriginal(src, "forward");
     const n = (b.attachments || []).length;
     toast(t("Weitergeleitet an {name}", { name: ct.name || ct.email }) + (n ? t(n > 1 ? " (inkl. {n} Anhänge)" : " (inkl. {n} Anhang)", { n }) : ""), "ok");
     if (r.warning) toast(r.warning, "err");
@@ -582,12 +563,13 @@ function suggestions(q) {
   return out.slice(0, 7);
 }
 
-function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", forward = null, fwdAtts = [], files = [], draftId = null, accId = null, sig = null } = {}) {
+function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", forward = null, fwdAtts = [], files = [], draftId = null, accId = null, sig = null, original = null } = {}) {
   if (!S.cfg.accounts.length) return openSettings("accounts");
   const startAcc = accId ?? S.accId ?? S.cfg.accounts[0].id;
   const st = {
     accId: startAcc, sig: sig ?? account(startAcc)?.default_signature ?? 0,
     files: [...files], forward, fwdAtts: [...fwdAtts], draftId, sugg: [], si: 0, busy: false,
+    original, // { kind: "reply" | "forward", ref: { accountId, folder, uid } }
   };
   const root = $("#modal-root");
   root.innerHTML = `<div class="overlay"><div class="modal">
@@ -703,6 +685,8 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
       attachments: st.files.map(({ name, mime, data }) => ({ name, mime, data })),
       forward: st.forward && st.fwdAtts.length ? st.forward : null,
       draftId: st.draftId,
+      replyTo: st.original?.kind === "reply" ? st.original.ref : null,
+      forwardOf: st.original?.kind === "forward" ? st.original.ref : null,
     };
   };
   const setState = (t) => { const el = $("#c-state"); if (el) el.textContent = t; };
@@ -752,6 +736,7 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
       S.closeGuard = null;
       closeModal();
       if (r.warning) toast(r.warning, "err"); else toast("Nachricht gesendet", "ok");
+      if (st.original) markOriginal(st.original.ref, st.original.kind);
       if (r.sent_folder) forgetFolder(m.accountId, (f) => f === r.sent_folder);
       if (m.draftId) forgetFolder(m.accountId, (f) => folderInfo(f, m.accountId).icon === "drafts");
       if (S.cur) loadHeads(S.cur.id, S.cur.folder);
@@ -781,6 +766,14 @@ function openCompose({ to = "", cc = "", bcc = "", subject = "", quote = "", for
   if (quote) $("#c-body").setSelectionRange(0, 0);
 }
 
+/// Nach dem Senden das Original sofort mit Pfeil anzeigen (der Server wurde im Backend markiert)
+function markOriginal(ref, kind) {
+  const m = (S.heads[key(ref.accountId, ref.folder)] || []).find((x) => x.uid === ref.uid);
+  if (!m) return;
+  if (kind === "forward") m.forwarded = true; else m.answered = true;
+  if (curKey() === key(ref.accountId, ref.folder)) { renderList(); renderReader(); }
+}
+
 async function replyOrForward(fwd) {
   const h = curHead();
   if (!h) return;
@@ -791,11 +784,12 @@ async function replyOrForward(fwd) {
     openCompose({
       subject: fwdSubject(h), quote: "\n\n\n" + forwardText(h, b),
       forward: { accountId: S.cur.id, folder: S.cur.folder, uid: h.uid }, fwdAtts: b.attachments || [],
+      original: { kind: "forward", ref: { accountId: S.cur.id, folder: S.cur.folder, uid: h.uid } },
     });
   } else {
     const quoted = (b.text || "").split("\n").map((l) => "> " + l).join("\n");
     const subj = /^(re|aw):/i.test(h.subject) ? h.subject : "Re: " + h.subject;
-    openCompose({ to: b.reply_to || h.from_addr, subject: subj, quote: `\n\n\n${t("Am {date} schrieb {name}:", { date: fmtLong(h.ts), name: `${h.from} <${h.from_addr}>` })}\n${quoted}` });
+    openCompose({ original: { kind: "reply", ref: { accountId: S.cur.id, folder: S.cur.folder, uid: h.uid } }, to: b.reply_to || h.from_addr, subject: subj, quote: `\n\n\n${t("Am {date} schrieb {name}:", { date: fmtLong(h.ts), name: `${h.from} <${h.from_addr}>` })}\n${quoted}` });
   }
 }
 
@@ -876,7 +870,8 @@ function renderSync() {
   const el = $("#sync-status");
   if (!el) return;
   const st = S.sync;
-  if (st.running) {
+  // Kreisel nur, solange wirklich Mails heruntergeladen werden – die reine Prüfung läuft still im Hintergrund
+  if (st.running && st.total && st.done < st.total) {
     el.innerHTML = `<span class="spinner"></span><span>${t("Offline-Sync")}: ${esc(st.folder || "…")}${st.total ? ` · ${st.done}/${st.total}` : ""}</span>`;
   } else if (S.offline) {
     el.innerHTML = `<span class="pill-off">Offline</span><span>${t("Zeige gespeicherte Mails")}</span>`;
@@ -1312,7 +1307,6 @@ async function deleteAccount() {
   const a = account(settingsState.edit);
   if (!a || !confirm(t("Konto „{name}“ aus MailLine entfernen?", { name: a.email }))) return;
   S.cfg.accounts = S.cfg.accounts.filter((x) => x.id !== a.id);
-  S.cfg.focus_folders = S.cfg.focus_folders.filter((k) => !k.startsWith(a.id + "|"));
   await invoke("delete_password", { id: a.id });
   await saveCfg();
   settingsState.edit = null;
@@ -1324,17 +1318,10 @@ async function deleteAccount() {
 }
 
 // ---------------------------------------------------------------- Ereignisse
+let downOnOverlay = false;
+document.addEventListener("mousedown", (e) => { downOnOverlay = e.target.classList?.contains("overlay") ?? false; }, true);
 document.addEventListener("click", (e) => {
   const t = e.target;
-  const star = t.closest("[data-star]");
-  if (star) {
-    e.stopPropagation();
-    const k = star.dataset.star;
-    const i = S.cfg.focus_folders.indexOf(k);
-    i >= 0 ? S.cfg.focus_folders.splice(i, 1) : S.cfg.focus_folders.push(k);
-    saveCfg(); renderSidebar();
-    return;
-  }
   const f = t.closest("[data-open]");
   if (f) { const k = f.dataset.open, i = k.indexOf("|"); return openFolder(Number(k.slice(0, i)), k.slice(i + 1)); }
   const acc = t.closest("[data-acc]");
@@ -1354,7 +1341,9 @@ document.addEventListener("click", (e) => {
   if (hit) return openHit(Number(hit.dataset.hit));
   const msg = t.closest("[data-uid]");
   if (msg) return clickMessage(Number(msg.dataset.uid), e);
-  if (t.closest("[data-close]") || t.classList.contains("overlay")) return requestClose();
+  // Hintergrund-Klick schließt nur, wenn auch die Maustaste dort gedrückt wurde – sonst würde
+  // das Markieren von Text, das außerhalb des Fensters losgelassen wird, den Dialog schließen
+  if (t.closest("[data-close]") || (t.classList.contains("overlay") && downOnOverlay)) return requestClose();
   const tab = t.closest("[data-tab]");
   if (tab) { settingsState.tab = tab.dataset.tab; settingsState.edit = null; return renderSettings(); }
   const ed = t.closest("[data-edit]");
@@ -1377,8 +1366,6 @@ document.addEventListener("click", (e) => {
     case "back": settingsState.edit = null; return renderSettings();
     case "save-account": return saveAccount();
     case "del-account": return deleteAccount();
-    case "toggle-focus": return toggleFocus();
-    case "edit-focus": S.editFocus = !S.editFocus; return renderSidebar();
     case "images": S.showImages = true; return renderReader();
     case "edit-draft": return editDraft();
     case "sel-seen": { const u = selectedUids(); return setSeen(u, anyUnreadIn(u)); }
@@ -1416,17 +1403,6 @@ document.addEventListener("change", (e) => {
 let saveTimer;
 function saveCfgSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveCfg, 400); }
 
-function toggleFocus() {
-  S.cfg.focus_active = !S.cfg.focus_active;
-  S.editFocus = false;
-  saveCfg();
-  // Beim Einschalten direkt ins erste Fokus-Postfach springen
-  if (S.cfg.focus_active && S.cur && !S.cfg.focus_folders.includes(curKey()) && S.cfg.focus_folders.length) {
-    const k = S.cfg.focus_folders[0], i = k.indexOf("|");
-    openFolder(Number(k.slice(0, i)), k.slice(i + 1));
-  } else renderSidebar();
-  toast(S.cfg.focus_active ? "Fokus-Modus an" : "Fokus-Modus aus");
-}
 
 $("#search").addEventListener("input", (e) => onSearchInput(e.target.value));
 $("#search").addEventListener("keydown", (e) => {
@@ -1444,7 +1420,6 @@ document.addEventListener("keydown", (e) => {
     if (a) { e.preventDefault(); switchAccount(a.id); }
     return;
   }
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); return toggleFocus(); }
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); return openContacts(); }
   if (e.ctrlKey && e.key.toLowerCase() === "k") { e.preventDefault(); return $("#search").focus(); }
   if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); return openCompose(); }
@@ -1649,12 +1624,11 @@ function messageMenu(uid) {
 }
 
 function folderMenu(id, folder) {
-  const k = key(id, folder), focus = S.cfg.focus_folders.includes(k);
+  const k = key(id, folder);
   const unread = (S.heads[k] || []).filter((m) => m.unread).map((m) => m.uid);
   return [
     { label: "Öffnen", icon: I.open, run: () => openFolder(id, folder) },
     { label: "Aktualisieren", icon: I.refresh, run: () => { if (curKey() === k) loadHeads(id, folder); else openFolder(id, folder); } },
-    { label: focus ? "Aus Fokus-Postfächern entfernen" : "Als Fokus-Postfach markieren", icon: I.star, run: () => { toggleFocusFolder(k); } },
     "-",
     { label: "Alle als gelesen markieren", icon: I.read, disabled: !unread.length, run: async () => { if (curKey() !== k) openFolder(id, folder); setSeen(unread, true); } },
   ];
@@ -1670,11 +1644,6 @@ function accountMenu(id) {
   ];
 }
 
-function toggleFocusFolder(k) {
-  const i = S.cfg.focus_folders.indexOf(k);
-  i >= 0 ? S.cfg.focus_folders.splice(i, 1) : S.cfg.focus_folders.push(k);
-  saveCfg(); renderSidebar();
-}
 
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); toast("Kopiert", "ok"); } catch { toast("Kopieren nicht möglich", "err"); }
@@ -1774,10 +1743,7 @@ function applyStaticTexts() {
   const first = S.cfg.accounts[0];
   if (!first) { renderAll(); return openSettings("accounts", "new"); }
   S.accId = first.id;
-  if (S.cfg.focus_active && S.cfg.focus_folders.length) {
-    const k = S.cfg.focus_folders[0], i = k.indexOf("|");
-    openFolder(Number(k.slice(0, i)), k.slice(i + 1));
-  } else openFolder(first.id, "INBOX");
+  openFolder(first.id, "INBOX");
   for (const a of S.cfg.accounts) {
     loadFolders(a.id);
     if (a.id !== S.cur.id) loadHeads(a.id, "INBOX"); // Badges für andere Konten
